@@ -13,6 +13,7 @@ import { runCliCouncil } from "./workers/council.ts";
 import type { CliBackend } from "./workers/cli.ts";
 import { QUEUE_USAGE, queueCommand } from "./scheduler/commands.ts";
 import { readBoundedJson } from "./scheduler/config.ts";
+import { runConventionalToArtifacts } from "./integrations/conventional/artifacts.ts";
 
 const USAGE = `RL research harness
 
@@ -33,6 +34,9 @@ Subscription-backed review (uses the selected official client's allowance):
   npm run harness -- review <packet.json> <codex|claude> <output-directory>
   npm run harness -- smoke <codex|claude>
 
+Explicit bounded local RL engineering experiment (CPU, no model calls):
+  npm run harness -- conventional-run <request.json> <absolute-python-executable> <new-output-directory>
+
 review performs independent methods, systems and adversarial reviews and up to two
 proposal revisions. It saves JSON/Markdown decisions; it cannot launch training.
 smoke makes one short, tool-suppressed client call. API fallback is not configured.
@@ -40,6 +44,8 @@ coworker-plan validates declarations and prints a fixed command preview. It does
 read the trainer's files, run preflight, admit a job, or launch training.
 coworker-assess archives deterministic diagnostics and evidence requests from an
 existing capture. It makes no model calls and cannot intervene in training.
+conventional-run executes the fixed FrozenLake adapter for at most 120 seconds.
+It requires the pinned Python environment and refuses an existing output directory.
 Ledger commands take exclusive local ownership and recover abandoned dispatches as
 unknown. They cannot attach to a running controller or confirm remote cancellation.
 
@@ -65,6 +71,15 @@ export async function main(args: string[]): Promise<number> {
   if (!command || command === "--help" || command === "help") { console.log(USAGE); return 0; }
   const queued = await queueCommand(args);
   if (queued !== null) return queued;
+  if (command === "conventional-run" && rest.length === 3) {
+    const abort = new AbortController(), stop = () => abort.abort();
+    process.once("SIGINT", stop); process.once("SIGTERM", stop);
+    try {
+      const result = await runConventionalToArtifacts(await readBoundedJson(rest[0]!, 131_072),
+        { pythonExecutable: rest[1]!, timeoutMs: 120_000, signal: abort.signal }, rest[2]!);
+      print(result); return result.status === "completed" ? 0 : 2;
+    } finally { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); }
+  }
   if (command === "coworker-plan" && rest.length === 1) {
     print(prepareCoworkerAttempt(await readBoundedJson(rest[0]!)));
     return 0;

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "kind": "frozenlake-q-learning",
+  "requestId": "frozenlake-protocol-example",
+  "environment": { "id": "FrozenLake-v1", "mapName": "4x4", "isSlippery": true, "maxEpisodeSteps": 100 },
+  "algorithm": { "name": "tabular-q-learning", "learningRate": 0.2, "discount": 0.95, "epsilonStart": 1, "epsilonEnd": 0.1 },
+  "replicates": [
+    { "replicateId": "r0", "policySeed": 5000, "trainingEpisodeSeeds": [100, 101, 102, 103] },
+    { "replicateId": "r1", "policySeed": 5001, "trainingEpisodeSeeds": [200, 201, 202, 203] }
+  ],
+  "evaluation": { "episodeSeeds": [1000, 1001], "randomActionSeeds": [2000, 2001] },
+  "limits": { "maxTransitions": 1400, "maxEpisodeTransitions": 100 }
+}

@@ -1,0 +1,23 @@
+# Fixed Python 3.11 environment for the conventional RL engineering adapter.
+# Hashes from each named PyPI release; wheels only, no installation scripts.
+--only-binary=:all:
+gymnasium==1.4.0 \
+    --hash=sha256:1cb947c59e7c72d8eabb2c2274c00cd20948e69f8452a9ef4092223be24fdf0e
+numpy==2.3.5 \
+    --hash=sha256:de5672f4a7b200c15a4127042170a694d4df43c992948f5e1af57f0174beed10 \
+    --hash=sha256:acfd89508504a19ed06ef963ad544ec6664518c863436306153e13e94605c218 \
+    --hash=sha256:ffe22d2b05504f786c867c8395de703937f934272eb67586817b46188b4ded6d \
+    --hash=sha256:872a5cf366aec6bb1147336480fef14c9164b154aeb6542327de4970282cd2f5 \
+    --hash=sha256:3095bdb8dd297e5920b010e96134ed91d852d81d490e787beca7e35ae1d89cf7 \
+    --hash=sha256:8cba086a43d54ca804ce711b2a940b16e452807acebe7852ff327f1ecd49b0d4 \
+    --hash=sha256:6cf9b429b21df6b99f4dee7a1218b8b7ffbbe7df8764dc0bd60ce8a0708fed1e \
+    --hash=sha256:396084a36abdb603546b119d96528c2f6263921c50df3c8fd7cb28873a237748 \
+    --hash=sha256:b0c7088a73aef3d687c4deef8452a3ac7c1be4e29ed8bf3b366c8111128ac60c \
+    --hash=sha256:a414504bef8945eae5f2d7cb7be2d4af77c5d1cb5e20b296c2c25b61dff2900c \
+    --hash=sha256:0cd00b7b36e35398fa2d16af7b907b65304ef8bb4817a550e06e5012929830fa
+cloudpickle==3.1.2 \
+    --hash=sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a
+typing_extensions==4.15.0 \
+    --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
+Farama-Notifications==0.0.4 \
+    --hash=sha256:14de931035a41961f7c056361dc7f980762a143d05791ef5794a751a2caf05ae
