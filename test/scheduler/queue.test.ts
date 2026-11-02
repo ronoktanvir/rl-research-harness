@@ -163,7 +163,7 @@ test("queue never initializes its schema in the experiment ledger or a foreign s
 });
 
 async function crashWorker(path: string, phase: string): Promise<ReturnType<typeof spawn>> {
-  const child = spawn(process.execPath, ["--import", "tsx", resolve("test/scheduler/fixtures/queue-worker.ts"), path, phase], { stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["--expose-gc", "--import", "tsx", resolve("test/scheduler/fixtures/queue-worker.ts"), path, phase], { stdio: ["ignore", "pipe", "pipe"] });
   let errorText = ""; child.stderr!.on("data", data => { errorText += String(data); });
   await new Promise<void>((resolveReady, reject) => {
     const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`Fixture timeout: ${errorText}`)); }, 10_000);
@@ -173,18 +173,24 @@ async function crashWorker(path: string, phase: string): Promise<ReturnType<type
   }); return child;
 }
 
-test("process death distinguishes queued, uncommitted claim and committed uncertain attempt", async t => {
+test("ownership survives garbage collection until process death preserves each task attempt boundary", async t => {
   for (const phase of ["queued", "before-claim-commit", "running"]) await t.test(phase, async () => {
     const directory = await mkdtemp(join(tmpdir(), "queue-crash-")), path = join(directory, "queue.sqlite"); let child: ReturnType<typeof spawn> | undefined;
     try {
-      child = await crashWorker(path, phase); assert.throws(() => openTaskQueue({ path, authority }), /owns this queue/);
-      const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
+      child = await crashWorker(path, phase);
+      assert.equal(child.exitCode, null); assert.equal(child.signalCode, null);
+      assert.throws(() => { const contender = openTaskQueue({ path, authority }); contender.close(); }, /owns this queue/);
+      const exited = once(child, "exit"); child.kill("SIGKILL");
+      assert.deepEqual(await exited, [null, "SIGKILL"]);
       const queue = openTaskQueue({ path, authority, now: clock });
       try {
         assert.equal(queue.getTask("task-one").state, phase === "running" ? "uncertain" : "queued");
         assert.equal(queue.getBudget("global").consumedCalls, phase === "running" ? 1 : 0);
         assert.equal(queue.getBudget("global").activeAttempts, phase === "running" ? 1 : 0);
       } finally { queue.close(); }
-    } finally { if (child?.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); await rm(directory, { recursive: true, force: true }); }
+    } finally {
+      if (child?.exitCode === null && child.signalCode === null) { const exited = once(child, "exit"); child.kill("SIGKILL"); await exited; }
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

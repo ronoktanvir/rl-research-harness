@@ -150,7 +150,7 @@ test("one live owner excludes canonical aliases and preserves its crash-safe loc
 });
 
 async function crashWorker(path: string, phase: string) {
-  const child = spawn(process.execPath, ["--import", "tsx", resolve("test/execution/fixtures/journal-crash-worker.ts"), path, phase, JSON.stringify(declaration())],
+  const child = spawn(process.execPath, ["--expose-gc", "--import", "tsx", resolve("test/execution/fixtures/journal-crash-worker.ts"), path, phase, JSON.stringify(declaration())],
     { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
   let stderr = ""; child.stderr.on("data", chunk => { stderr += String(chunk); });
   await new Promise<void>((resolveReady, reject) => {
@@ -162,13 +162,15 @@ async function crashWorker(path: string, phase: string) {
   return child;
 }
 
-test("SIGKILL releases exclusive ownership and preserves only committed intents without replay", async t => {
+test("ownership survives garbage collection, then SIGKILL preserves only committed intents without replay", async t => {
   const directory = await mkdtemp(join(tmpdir(), "job-journal-crash-")); t.after(async () => rm(directory, { recursive: true, force: true }));
   for (const phase of ["before-commit", "after-commit"]) {
     const path = join(directory, `${phase}.sqlite`), child = await crashWorker(path, phase);
     try {
-      assert.throws(() => openJobJournal({ path }), { code: "owned" });
-      const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
+      assert.equal(child.exitCode, null); assert.equal(child.signalCode, null);
+      assert.throws(() => { const contender = openJobJournal({ path }); contender.close(); }, { code: "owned" });
+      const exited = once(child, "exit"); child.kill("SIGKILL");
+      assert.deepEqual(await exited, [null, "SIGKILL"]);
       const recovered = openJobJournal({ path, now: () => new Date(at) });
       try {
         const saved = recovered.read(declaration().jobId);

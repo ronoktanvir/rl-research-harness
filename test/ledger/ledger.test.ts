@@ -190,7 +190,7 @@ test("the live owner excludes aliases and preserves the owner file through order
 });
 
 async function launchCrashWorker(path: string, phase: string): Promise<ReturnType<typeof spawn>> {
-  const child = spawn(process.execPath, ["--import", "tsx", resolve("test/ledger/fixtures/crash-worker.ts"), path, phase], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, ["--expose-gc", "--import", "tsx", resolve("test/ledger/fixtures/crash-worker.ts"), path, phase], { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] });
   let stderr = ""; child.stderr!.on("data", data => { stderr += String(data); });
   await new Promise<void>((resolveReady, reject) => {
     const timeout = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`Crash fixture timed out: ${stderr}`)); }, 10_000);
@@ -201,14 +201,16 @@ async function launchCrashWorker(path: string, phase: string): Promise<ReturnTyp
   return child;
 }
 
-test("real process death preserves uncommitted, queued and uncertain dispatch distinctions", async t => {
+test("ownership survives garbage collection until real process death preserves each dispatch boundary", async t => {
   for (const phase of ["before-commit", "after-admission", "after-claim"]) await t.test(phase, async () => {
     const directory = await mkdtemp(join(tmpdir(), "ledger-crash-")), path = join(directory, "ledger.sqlite");
     let child: ReturnType<typeof spawn> | undefined;
     try {
       child = await launchCrashWorker(path, phase);
-      assert.throws(() => openExperimentLedger({ path }), /owns this ledger/);
-      const exited = once(child, "exit"); child.kill("SIGKILL"); await exited;
+      assert.equal(child.exitCode, null); assert.equal(child.signalCode, null);
+      assert.throws(() => { const contender = openExperimentLedger({ path }); contender.close(); }, /owns this ledger/);
+      const exited = once(child, "exit"); child.kill("SIGKILL");
+      assert.deepEqual(await exited, [null, "SIGKILL"]);
       const reopened = openExperimentLedger({ path, now: fixedNow });
       try {
         const actions = reopened.listActions();
@@ -217,7 +219,10 @@ test("real process death preserves uncommitted, queued and uncertain dispatch di
         assert.equal(reopened.getBudget("global").outstandingMicrodollars, phase === "before-commit" ? 0n : 100n);
         if (phase === "after-claim") assert.equal(reopened.claimDispatch({ workerId: "new-worker", deadlineAt: deadline }), null);
       } finally { reopened.close(); }
-    } finally { if (child?.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); await rm(directory, { recursive: true, force: true }); }
+    } finally {
+      if (child?.exitCode === null && child.signalCode === null) { const exited = once(child, "exit"); child.kill("SIGKILL"); await exited; }
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
 
