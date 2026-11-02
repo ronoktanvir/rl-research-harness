@@ -2,7 +2,7 @@
 
 A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
-The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger, a generic local Linux supervisor, read-only CoworkerRL capture, attempt previews and byte verification, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training backends, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
+The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger connected to a local Linux supervisor, CoworkerRL capture and deterministic assessment, attempt/byte/native-output checks, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training integrations, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
 
 ## Run locally
 
@@ -25,11 +25,14 @@ To preserve an observation and export operational context:
 
 ```sh
 npm run harness -- capture .harness/coworker.sqlite coworker capture-001 /path/to/CoworkeRL path/within/project/report.json
+npm run harness -- coworker-assess .harness/coworker.sqlite coworker capture-001
 npm run harness -- ledger-status .harness/coworker.sqlite coworker
 npm run harness -- ledger-export .harness/coworker.sqlite coworker .harness/projects
 ```
 
 Reusing a capture ID retrieves its existing observation; use a new ID for a fresh read. Historical reports do not become executable experiment manifests. [Project state](docs/project-state.md) explains exports and local stop/resume commands.
+
+The [deterministic assessment](docs/integrations/coworker-assessment.md) scans all captured steps, archives ranked diagnostic requests and produces a council evidence packet. It uses no model calls and preserves missing evaluation/baseline evidence. The [historical assessment](docs/research/coworker-assessment-2026-11-02.md) records the actual 30-step archive result.
 
 ## Use existing subscriptions
 
@@ -57,15 +60,17 @@ A council's approval means its review protocol completed; it does not certify sc
 | `src/runtime/` | Optional pinned Pi runtime with persistent conversations and injected models/tools |
 | `src/ledger/` | Authoritative manifests, runs, reservations, dispatch identities, observations, accounting and stop barriers |
 | `src/controller/` | Single-submission/reconciliation coordinator and ledger-derived project summaries |
-| `src/execution/` | Durable job intents, deadline-gated systemd execution and identity-bound process/cleanup evidence; not an enabled training backend |
+| `src/execution/` | Ledger-connected dispatch/cancellation/status, durable job intents, deadline-gated systemd execution and process/cleanup evidence |
 | `src/scheduler/` | Persistent tasks, invocation admission, account holds, bounded local runner and archived-report review plans |
 | `src/literature/` | Bounded arXiv queries, strict Atom parsing, captured response provenance and abstract-scoped evidence packets |
-| `src/integrations/coworker/` | CoworkerRL references/metrics, confined file reader, immutable attempt previews and bounded artifact byte verification |
+| `src/integrations/coworker/` | CoworkerRL capture/assessment, confined file reader, attempt previews, artifact bytes and native-preflight output interpretation |
 | `test/` | Offline tests, real process-interruption tests and adversarial input cases |
 
 A resumed conversation is not proof that remote training resumed. Pi state and Markdown remain separate from the authoritative experiment ledger. [Ledger qualification](docs/ledger-implementation.md) and [dispatch qualification](docs/controller-dispatch.md) describe tested local guarantees and the remaining remote-worker requirements.
 
 The [local supervisor](docs/local-supervisor.md) records intent before start and queries existing jobs after lost responses. Its [cleanup evidence](docs/cleanup-evidence.md) and [deadline contract](docs/execution-deadline.md) state the tested guarantees and host assumptions. [Linux qualification](docs/systemd-qualification.md) uses explicit CPU-only CI tests; ordinary tests skip service creation. Native trainer readiness, immutable deployment and allocation release require separate evidence.
+
+The [supervised backend](docs/supervised-backend.md) connects admitted actions to that supervisor and keeps execution separate from evaluation and billing. It requires a trusted deployment resolver; none is installed for CoworkerRL. The [native preflight contract](docs/integrations/coworker-native-preflight.md) explains why passing the native flag alone cannot enable training.
 
 ## Design and evidence
 

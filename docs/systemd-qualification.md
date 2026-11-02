@@ -4,6 +4,8 @@
 
 The earlier [five-case success at `150723f`](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41393686347/job/125110331007) took 7.16 seconds on runner image `20261025.353.1`, Node `24.22.1`, and the same OS/systemd package. That source lacked production evidence after cgroup removal. [Run 41395292611 at `0ded185`](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41395292611) then passed all five cases with cleanup evidence and persisted worker terminal classification. The current seven-case run also qualifies the notify gate. These successive results are distinct; later evidence does not erase earlier failures.
 
+The subsequent ledger-integration source `1a5c6bef7a5886d5d6d04d5562279a259fa96117` also passes these seven cases and their parent in [run 41398760542](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41398760542/job/125125749066), with systemd `255.4-1ubuntu8.18` and Node `24.22.1`. Both offline Node jobs pass 415 tests with one deliberate native-suite skip. This source adds mandatory cancellation authority callbacks and exact observation IDs; the native fixtures use authorized callbacks, while revocation during the ownership query is tested offline. The new [backend bridge](supervised-backend.md) has persistent-store integration tests with injected deployment/transport evidence, not a native CoworkeRL resolver qualification.
+
 ## Earlier failures and corrections
 
 [CI run 41392051749](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41392051749), at source `9d8f983`, reported the same systemd package; all five cases received an unknown start outcome before reaching their lifecycle assertions. The original assertions omitted the underlying manager diagnostic.
