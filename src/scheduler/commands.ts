@@ -14,6 +14,8 @@ import type { CouncilPlanRequest } from "./council-contracts.ts";
 import { buildLiteratureEvidencePacket, discoverArxiv, getArxivAvailability, releaseArxivHold } from "../literature/index.ts";
 import type { ArxivDiscoveryRequest, LiteraturePacketRequest, ReleaseArxivHoldRequest } from "../literature/types.ts";
 import { hash } from "../ledger/validation.ts";
+import { advanceAssessmentWorkflow, loadAssessmentWorkflow, prepareAssessmentWorkflow, runAssessmentWorkflow } from "./assessment-workflow.ts";
+import type { AssessmentWorkflowRequest } from "./assessment-workflow.ts";
 
 export const QUEUE_USAGE = `Persistent research tasks (configured official-client invocation limits apply):
   npm run harness -- queue-status <config.json>
@@ -27,6 +29,9 @@ export const QUEUE_USAGE = `Persistent research tasks (configured official-clien
   npm run harness -- council-prepare <config.json> <request.json>
   npm run harness -- council-advance <config.json> <plan-observation-id>
   npm run harness -- council-run <config.json> <plan-observation-id> <maximum-tasks> <output-directory>
+  npm run harness -- assessment-prepare <config.json> <request.json>
+  npm run harness -- assessment-advance <config.json> <workflow-observation-id>
+  npm run harness -- assessment-run <config.json> <workflow-observation-id>
   npm run harness -- literature-discover <config.json> <request.json>
   npm run harness -- literature-packet <config.json> <query-observation-id> <request.json> <output.json>
   npm run harness -- literature-status <config.json>
@@ -95,6 +100,7 @@ export async function queueCommand(args: string[]): Promise<number | null> {
     "queue-cancel": 3, "queue-resume": 2, "queue-release-resource": 2,
     "report-review-prepare": 2, "report-review-aggregate": 3,
     "council-prepare": 2, "council-advance": 2, "council-run": 4,
+    "assessment-prepare": 2, "assessment-advance": 2, "assessment-run": 2,
     "literature-discover": 2, "literature-packet": 4, "literature-status": 1, "literature-release": 2 };
   if (!command || !Object.hasOwn(arity, command)) return null;
   if (rest.length !== arity[command]) throw new Error(`Invalid research queue arguments.\n${QUEUE_USAGE}`);
@@ -102,6 +108,28 @@ export async function queueCommand(args: string[]): Promise<number | null> {
   const harness = openConfiguredHarness(config);
   try {
     if (command === "queue-status") { output(summary(harness)); return 0; }
+    if (command === "assessment-prepare") {
+      const request = await readBoundedJson(rest[1]!) as AssessmentWorkflowRequest;
+      configuredProject(harness, request.projectId);
+      const plan = prepareAssessmentWorkflow(harness.ledger, harness.queue, harness.handlers, request);
+      output({ workflowObservationId: plan.observationId, workflowDigest: plan.digest, taskId: plan.task.taskId }); return 0;
+    }
+    if (command === "assessment-advance" || command === "assessment-run") {
+      const plan = loadAssessmentWorkflow(harness.ledger, rest[1]!);
+      configuredProject(harness, plan.request.projectId);
+      if (command === "assessment-advance") {
+        const progress = advanceAssessmentWorkflow(harness.ledger, harness.queue, plan.observationId);
+        output(progress); return 2;
+      }
+      const control = runnerSignal(harness);
+      try {
+        const progress = await runAssessmentWorkflow(harness.ledger, harness.queue, harness.handlers, plan.observationId,
+          { workerId: config.workerId, signal: control.signal });
+        output({ ...progress, stopPersisted: control.status() });
+        // Successful assessment still leaves scientific evidence requests unresolved.
+        return control.status() === false ? 1 : 2;
+      } finally { control.close(); }
+    }
     if (command === "literature-status") { output(getArxivAvailability(harness.ledger)); return 0; }
     if (command === "literature-release") {
       const released = releaseArxivHold(harness.ledger, await readBoundedJson(rest[1]!) as ReleaseArxivHoldRequest);

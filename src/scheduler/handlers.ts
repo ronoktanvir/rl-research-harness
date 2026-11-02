@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { isAbsolute, win32 } from 'node:path';
 import type { ExperimentLedger, JsonObject } from '../ledger/types.ts';
 import { captureCoworkerReport } from '../integrations/coworker/capture.ts';
+import { archiveCoworkerAssessment, COWORKER_ASSESSMENT_RULES } from '../integrations/coworker/assessment.ts';
 import { writeProjectSummary } from '../controller/project-summary.ts';
 import { freezeSnapshot, verifyEvidencePacket } from '../research/evidence.ts';
 import { validateReview } from '../research/validation.ts';
@@ -32,6 +33,9 @@ const VERSION = '1';
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const CLIENT_STATUSES = ['succeeded', 'rate_limited', 'auth_required', 'failed', 'cancelled', 'timed_out'];
 const MAX_RESPONSE_BYTES = 1_000_000;
+export const COWORKER_ASSESSMENT_HANDLER_POLICY: Readonly<HandlerPolicy> = Object.freeze({
+  kind: 'coworker_assessment', version: '1', replay: 'reconcile_safe', callUnits: 0, resourceKey: null,
+});
 
 function object(value: unknown): asserts value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) {
@@ -212,5 +216,19 @@ export function createResearchTaskHandlers(options: ResearchTaskHandlerOptions):
         meaning: 'Immutable projection of ledger state; not a new authority or scientific assessment.' });
     } catch (error) { return outcome('failed', { reason: 'project_summary_failed', errorType: error instanceof Error ? error.name : 'UnknownError' }); }
   });
-  return [...reviewers, captures, summaries];
+  const assessments = handler(COWORKER_ASSESSMENT_HANDLER_POLICY, raw => {
+    keys(raw, ['captureId', 'captureDigest', 'rulesDigest'], ['captureId', 'captureDigest', 'rulesDigest']);
+    id(raw.captureId);
+    if (typeof raw.captureDigest !== 'string' || !/^[a-f0-9]{64}$/u.test(raw.captureDigest)
+      || raw.rulesDigest !== COWORKER_ASSESSMENT_RULES.digest) throw new Error('Assessment must pin the capture and current rule digest');
+  }, async (raw, projectId) => {
+    try {
+      const archived = archiveCoworkerAssessment(ledger, { projectId, captureId: raw.captureId as string, captureDigest: raw.captureDigest as string });
+      return outcome('completed', { kind: 'coworker_assessment', assessmentObservationId: archived.eventId,
+        assessmentObservationDigest: archived.digest, assessmentDigest: archived.payload.digest!, rulesDigest: archived.payload.rulesDigest!,
+        captureId: raw.captureId!, captureDigest: raw.captureDigest!,
+        meaning: 'Retrospective assessment archived; evidence requests remain unresolved and no intervention is authorized.' });
+    } catch (error) { return outcome('failed', { reason: 'assessment_failed', errorType: error instanceof Error ? error.name : 'UnknownError' }); }
+  });
+  return [...reviewers, captures, summaries, assessments];
 }
