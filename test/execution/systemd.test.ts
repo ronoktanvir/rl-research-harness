@@ -45,12 +45,15 @@ test("start uses literal argv, fixed env clearing, bounded cgroup policy and no 
   assert.equal(call.timeoutMs, 3000); assert.equal(call.maxOutputBytes, 32_768);
   assert.deepEqual(call.env, { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C", LC_ALL: "C", SYSTEMD_PAGER: "cat", SYSTEMD_COLORS: "0" });
   for (const arg of ["--system", "--expand-environment=no", "--property=Type=exec", "--property=ExitType=cgroup", "--remain-after-exit", "--property=Restart=no", "--uid=1001", "--gid=1001",
-    "--property=RuntimeMaxSec=12000ms", "--property=TimeoutStartSec=2000ms", "--property=JobTimeoutSec=2000ms", "--property=TimeoutStopSec=1000ms", "--property=KillMode=control-group",
+    "--property=RuntimeMaxSec=12000ms", "--property=TimeoutStartSec=2000ms", "--property=TimeoutStopSec=1000ms", "--property=KillMode=control-group",
     "--property=SendSIGKILL=yes", "--property=Delegate=no", "--property=MemoryMax=268435456", "--property=TasksMax=16", "--property=NoNewPrivileges=yes",
     "--property=ProtectSystem=strict", "--property=ReadOnlyPaths=/opt/fixture", "--property=ReadWritePaths=/srv/fixture"]) assert.ok(call.args.includes(arg), arg);
   const end = call.args.indexOf("--");
   assert.deepEqual(call.args.slice(end), ["--", "/usr/bin/env", "-i", "--", "FIXTURE=literal $HOME %n spaces=equal", "PATH=/usr/bin", r.command.executable, ...r.command.args]);
   assert.ok(!call.args.some(arg => /--(scope|shell|wait|collect|user)$/u.test(arg)));
+  // Real systemd 255 rejects JobTimeoutUSec on transient creation. A running-job
+  // timeout is not a substitute for a queue deadline, so neither is advertised.
+  assert.ok(!call.args.some(arg => /^--property=Job(?:Running)?Timeout/u.test(arg)));
 });
 
 test("sudo is a fixed noninteractive prefix and never changes the trainer to root", async () => {

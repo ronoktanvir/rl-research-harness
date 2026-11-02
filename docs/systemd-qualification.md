@@ -1,6 +1,8 @@
 # Bounded Linux supervisor qualification
 
-**Status: the first real Linux qualification failed at startup; the supervisor is not yet qualified.** [CI run 41392051749](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41392051749), at source `9d8f983`, reported systemd 255 (`255.4-1ubuntu8.18`); all five cases received an unknown start outcome before reaching their lifecycle assertions. The original assertions omitted the underlying manager diagnostic, so these logs do not establish the cause. Fixture-only bounded diagnostics have been added for the next run. The ordinary offline suite skips real services. No CoworkeRL, model accounts or infrastructure provisioning is involved.
+**Status: real Linux qualification failed at startup; the supervisor is not yet qualified.** [CI run 41392051749](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41392051749), at source `9d8f983`, reported systemd 255 (`255.4-1ubuntu8.18`); all five cases received an unknown start outcome before reaching their lifecycle assertions. The original assertions omitted the underlying manager diagnostic.
+
+The [diagnostic run 41392837686](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41392837686), at `73c0b0d998a3213168d44760f21802cf9b6bbf2c`, identifies the failure: each start returned exit code 1 because the transient-service API rejected `JobTimeoutUSec`, generated from the requested `JobTimeoutSec` setting. Native host-identity reading passed; subsequent queries found no matching unit. No lifecycle or terminal-cgroup assertion was reached. The unrelated environment-expansion hint in the error output is not evidence that argument expansion should be enabled. A transport correction still needs a successful real CI run. The ordinary offline suite skips real services. No CoworkeRL, model accounts or infrastructure provisioning is involved.
 
 ## Execution boundary
 

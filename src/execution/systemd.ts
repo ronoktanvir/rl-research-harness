@@ -216,7 +216,9 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
       const args = ["--system", "--no-ask-password", "--quiet", `--unit=${request.identity.unitName}`, `--description=${request.identity.description}`, "--expand-environment=no", "--remain-after-exit",
         "--property=Type=exec", "--property=ExitType=cgroup", "--property=Restart=no", `--uid=${profile.userId}`, `--gid=${profile.groupId}`,
         `--working-directory=${request.command.cwd}`, `--property=RuntimeMaxSec=${l.runtimeMs}ms`, `--property=TimeoutStartSec=${l.startTimeoutMs}ms`,
-        `--property=JobTimeoutSec=${l.startTimeoutMs}ms`, `--property=TimeoutStopSec=${l.stopTimeoutMs}ms`, "--property=TimeoutStopFailureMode=kill",
+        // v255 rejects transient JobTimeoutUSec despite parsing JobTimeoutSec.
+        // TimeoutStartSec bounds activation, not time queued in the manager.
+        `--property=TimeoutStopSec=${l.stopTimeoutMs}ms`, "--property=TimeoutStopFailureMode=kill",
         "--property=KillMode=control-group", "--property=KillSignal=SIGTERM", "--property=FinalKillSignal=SIGKILL", "--property=SendSIGKILL=yes", "--property=Delegate=no",
         `--property=MemoryMax=${l.memoryMaxBytes}`, `--property=TasksMax=${l.tasksMax}`, "--property=TasksAccounting=yes", "--property=NoNewPrivileges=yes",
         "--property=ProtectSystem=strict", "--property=ProtectHome=yes", "--property=ProtectControlGroups=yes", "--property=ProtectKernelTunables=yes", "--property=ProtectKernelModules=yes",
