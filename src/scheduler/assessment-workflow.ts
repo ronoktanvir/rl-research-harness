@@ -160,6 +160,16 @@ function followups(plan: AssessmentWorkflow, archived: ObservationRecord, assess
       "A clean captured trajectory does not establish current liveness, checkpoint validity, independent learning benefit or publication quality."] };
   return freezeSnapshot({ ...body, digest: hash(body) });
 }
+/** Verify an already archived follow-up plan without modifying either store. */
+export function loadAssessmentFollowups(ledger: ExperimentLedger, workflowObservationId: string): AssessmentFollowupPlan {
+  const plan = loadAssessmentWorkflow(ledger, workflowObservationId);
+  const { record, assessed } = archivedAssessment(ledger, plan);
+  const expected = followups(plan, record, assessed), stored = verified(ledger.getObservation(expected.observationId));
+  if (stored.eventId !== expected.observationId || stored.projectId !== plan.request.projectId || stored.source !== FOLLOWUP_SOURCE
+    || encode(stored.payload) !== encode(expected)) throw new Error("Follow-up archive conflicts with derived requests");
+  return expected;
+}
+
 /** Publish follow-ups only after the queue result and immutable assessment agree. */
 export function advanceAssessmentWorkflow(ledger: ExperimentLedger, queue: TaskQueue, observationId: string,
   now: () => Date = () => new Date()): AssessmentWorkflowProgress {

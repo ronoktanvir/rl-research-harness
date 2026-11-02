@@ -1,11 +1,13 @@
 import { open } from "node:fs/promises";
 import { constants } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, normalize, resolve } from "node:path";
 import { openExperimentLedger } from "../ledger/index.ts";
 import { id, integer, keys, object, text } from "../ledger/validation.ts";
 import { openTaskQueue, QueueError } from "./index.ts";
 import { createResearchTaskHandlers } from "./handlers.ts";
 import { createCouncilTaskHandlers } from "./council-handlers.ts";
+import { createInvestigationTaskHandlers } from "./investigation-handlers.ts";
+import type { CoworkerInvestigationWorker } from "../integrations/coworker/investigation-worker.ts";
 import { ledgerAuthority, registerResearchHandlers } from "./runner.ts";
 import type { ExperimentLedger } from "../ledger/types.ts";
 import type { ResearchTaskHandler, ResearchTaskHandlerOptions } from "./handlers.ts";
@@ -17,6 +19,8 @@ export interface HarnessConfig {
   ledgerPath: string;
   queuePath: string;
   workerId: string;
+  /** Trusted absolute Python 3.11+ runtime for read-only historical inspection. */
+  investigationPythonExecutable?: string;
   limits: InvocationLimits;
   projects: Record<string, { root: string; summaryDirectory: string; limits: InvocationLimits }>;
 }
@@ -48,9 +52,13 @@ function limits(value: unknown): asserts value is InvocationLimits {
 
 export function parseHarnessConfig(raw: unknown, baseDirectory: string): HarnessConfig {
   const input: unknown = structuredClone(raw);
-  keys(input, ["schemaVersion", "ledgerPath", "queuePath", "workerId", "limits", "projects"]);
+  const required = ["schemaVersion", "ledgerPath", "queuePath", "workerId", "limits", "projects"];
+  keys(input, [...required, "investigationPythonExecutable"], required);
   if (input.schemaVersion !== 1) throw new Error("Unsupported harness configuration version");
   text(input.ledgerPath); text(input.queuePath); id(input.workerId); limits(input.limits); object(input.projects);
+  const python = input.investigationPythonExecutable;
+  if (python !== undefined && (typeof python !== "string" || !isAbsolute(python) || normalize(python) !== python || python === "/"
+    || python.length > 4096 || /[\0\r\n\\]/u.test(python))) throw new Error("Investigation Python must be a canonical absolute path");
   const projects: HarnessConfig["projects"] = Object.create(null) as HarnessConfig["projects"];
   for (const [projectId, config] of Object.entries(input.projects)) {
     if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(projectId)) throw new Error("Invalid project ID");
@@ -60,7 +68,8 @@ export function parseHarnessConfig(raw: unknown, baseDirectory: string): Harness
   if (!Object.keys(projects).length || Object.keys(projects).length > 100) throw new Error("Configure 1–100 research projects");
   const ledgerPath = resolve(baseDirectory, input.ledgerPath), queuePath = resolve(baseDirectory, input.queuePath);
   if (ledgerPath === queuePath) throw new Error("Research queue and experiment ledger require different files");
-  return { schemaVersion: 1, ledgerPath, queuePath, workerId: input.workerId, limits: input.limits, projects };
+  return { schemaVersion: 1, ledgerPath, queuePath, workerId: input.workerId, limits: input.limits, projects,
+    ...(typeof python === "string" ? { investigationPythonExecutable: python } : {}) };
 }
 
 export async function loadHarnessConfig(path: string): Promise<HarnessConfig> {
@@ -80,7 +89,7 @@ export interface ConfiguredHarness {
  * invocation allowance. Provider quota is separate and is not measured by these counters.
  */
 export function openConfiguredHarness(raw: HarnessConfig,
-  injections: Omit<Partial<ResearchTaskHandlerOptions>, "ledger" | "projects"> = {}): ConfiguredHarness {
+  injections: Omit<Partial<ResearchTaskHandlerOptions>, "ledger" | "projects"> & { investigationWorker?: CoworkerInvestigationWorker } = {}): ConfiguredHarness {
   const config = parseHarnessConfig(raw, process.cwd());
   const ledger = openExperimentLedger({ path: config.ledgerPath, ...(injections.now ? { now: injections.now } : {}) });
   let queue: TaskQueue | undefined;
@@ -92,7 +101,10 @@ export function openConfiguredHarness(raw: HarnessConfig,
       { root: value.root, summaryDirectory: value.summaryDirectory }]));
     const handlers = [...createResearchTaskHandlers({ ...injections, ledger, projects }),
       ...createCouncilTaskHandlers({ ledger, projects: Object.keys(projects),
-        ...(injections.review ? { review: injections.review } : {}), ...(injections.now ? { now: injections.now } : {}) })];
+        ...(injections.review ? { review: injections.review } : {}), ...(injections.now ? { now: injections.now } : {}) }),
+      ...createInvestigationTaskHandlers({ ledger, projects, ...(injections.investigationWorker ? { worker: injections.investigationWorker } : {}),
+        ...(config.investigationPythonExecutable ? { pythonExecutable: config.investigationPythonExecutable } : {}),
+        ...(injections.now ? { now: injections.now } : {}) })];
     registerResearchHandlers(queue, handlers);
     for (const [scopeId, value] of [["global", config.limits], ...Object.entries(config.projects).map(([projectId, project]) => [`project:${projectId}`, project.limits])] as [string, InvocationLimits][]) {
       let previous;

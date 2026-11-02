@@ -16,6 +16,8 @@ import type { ArxivDiscoveryRequest, LiteraturePacketRequest, ReleaseArxivHoldRe
 import { hash } from "../ledger/validation.ts";
 import { advanceAssessmentWorkflow, loadAssessmentWorkflow, prepareAssessmentWorkflow, runAssessmentWorkflow } from "./assessment-workflow.ts";
 import type { AssessmentWorkflowRequest } from "./assessment-workflow.ts";
+import { advanceInvestigationWorkflow, loadInvestigationWorkflow, prepareInvestigationWorkflow, runInvestigationWorkflow } from "./investigation-workflow.ts";
+import type { InvestigationWorkflowRequest } from "./investigation-workflow.ts";
 
 export const QUEUE_USAGE = `Persistent research tasks (configured official-client invocation limits apply):
   npm run harness -- queue-status <config.json>
@@ -32,6 +34,9 @@ export const QUEUE_USAGE = `Persistent research tasks (configured official-clien
   npm run harness -- assessment-prepare <config.json> <request.json>
   npm run harness -- assessment-advance <config.json> <workflow-observation-id>
   npm run harness -- assessment-run <config.json> <workflow-observation-id>
+  npm run harness -- investigation-prepare <config.json> <request.json>
+  npm run harness -- investigation-advance <config.json> <workflow-observation-id>
+  npm run harness -- investigation-run <config.json> <workflow-observation-id>
   npm run harness -- literature-discover <config.json> <request.json>
   npm run harness -- literature-packet <config.json> <query-observation-id> <request.json> <output.json>
   npm run harness -- literature-status <config.json>
@@ -101,6 +106,7 @@ export async function queueCommand(args: string[]): Promise<number | null> {
     "report-review-prepare": 2, "report-review-aggregate": 3,
     "council-prepare": 2, "council-advance": 2, "council-run": 4,
     "assessment-prepare": 2, "assessment-advance": 2, "assessment-run": 2,
+    "investigation-prepare": 2, "investigation-advance": 2, "investigation-run": 2,
     "literature-discover": 2, "literature-packet": 4, "literature-status": 1, "literature-release": 2 };
   if (!command || !Object.hasOwn(arity, command)) return null;
   if (rest.length !== arity[command]) throw new Error(`Invalid research queue arguments.\n${QUEUE_USAGE}`);
@@ -108,6 +114,27 @@ export async function queueCommand(args: string[]): Promise<number | null> {
   const harness = openConfiguredHarness(config);
   try {
     if (command === "queue-status") { output(summary(harness)); return 0; }
+    if (command === "investigation-prepare") {
+      const request = await readBoundedJson(rest[1]!, 16_384) as InvestigationWorkflowRequest;
+      const assessment = loadAssessmentWorkflow(harness.ledger, request.assessmentWorkflowObservationId);
+      configuredProject(harness, assessment.request.projectId);
+      const plan = prepareInvestigationWorkflow(harness.ledger, harness.queue, harness.handlers, request);
+      output({ workflowObservationId: plan.observationId, workflowDigest: plan.digest, taskId: plan.task.taskId }); return 0;
+    }
+    if (command === "investigation-advance" || command === "investigation-run") {
+      const plan = loadInvestigationWorkflow(harness.ledger, rest[1]!);
+      configuredProject(harness, plan.projectId);
+      if (command === "investigation-advance") {
+        output(advanceInvestigationWorkflow(harness.ledger, harness.queue, plan.observationId)); return 2;
+      }
+      const control = runnerSignal(harness);
+      try {
+        const progress = await runInvestigationWorkflow(harness.ledger, harness.queue, harness.handlers, plan.observationId,
+          { workerId: config.workerId, signal: control.signal, maxExecutionMs: 180_000 });
+        output({ ...progress, stopPersisted: control.status() });
+        return control.status() === false ? 1 : 2;
+      } finally { control.close(); }
+    }
     if (command === "assessment-prepare") {
       const request = await readBoundedJson(rest[1]!) as AssessmentWorkflowRequest;
       configuredProject(harness, request.projectId);

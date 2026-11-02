@@ -71,3 +71,18 @@ test("operator JSON reading rejects non-files, malformed and oversized content",
   await writeFile(file, "no"); await assert.rejects(readBoundedJson(file));
   await assert.rejects(readBoundedJson(directory), /regular/);
 });
+
+test("investigation interpreter is an explicit absolute operator setting pinned into the handler", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "harness-investigation-config-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const settings = parseHarnessConfig({ ...config(directory), investigationPythonExecutable: "/trusted/python3.11" }, directory);
+  const harness = openConfiguredHarness(settings);
+  try {
+    const handler = harness.handlers.find(item => item.policy.kind === "coworker_investigation")!;
+    assert.equal((handler as unknown as { workerDescriptor: { pythonExecutable: string } }).workerDescriptor.pythonExecutable, "/trusted/python3.11");
+    assert.equal(handler.policy.callUnits, 0);
+  } finally { harness.close(); }
+  for (const python of ["python3", "/trusted/../python", "/python\n", "/"]) {
+    assert.throws(() => parseHarnessConfig({ ...settings, investigationPythonExecutable: python }, directory), /canonical absolute/u);
+  }
+});
