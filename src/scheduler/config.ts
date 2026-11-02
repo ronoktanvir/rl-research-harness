@@ -76,7 +76,8 @@ export interface ConfiguredHarness {
 }
 
 /** Operator configuration is trusted authority for these invocation caps. Updating a cap
- * preserves all consumed units; reopening never replenishes the account or project.
+ * preserves all consumed units; reopening never replenishes the recorded global/project
+ * invocation allowance. Provider quota is separate and is not measured by these counters.
  */
 export function openConfiguredHarness(raw: HarnessConfig,
   injections: Omit<Partial<ResearchTaskHandlerOptions>, "ledger" | "projects"> = {}): ConfiguredHarness {

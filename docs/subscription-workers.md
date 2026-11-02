@@ -12,6 +12,20 @@ Anthropic permits an end user to sign into the unmodified Claude Code client wit
 
 These integrations consume the selected account's allowance. They do not multiply that allowance or guarantee unlimited use. Any account-level extra-usage/credit settings remain under the provider's control; an OAuth session is not proof of zero additional billing. The harness does not configure an API fallback or change those settings.
 
+## What a budget means here
+
+The user's subscription preference applies to research-agent reasoning and reviews. It does not require a paid model API account to build this harness. There are three separate resource controls:
+
+| Resource | What pays for it | What the harness currently controls |
+|---|---|---|
+| Codex/Claude Code reviews | The selected account's included allowance and any provider-managed extra-usage settings | Cumulative client-invocation and concurrency caps; holds after reported quota/authentication failures |
+| Droplet and training workers | The selected hosting/GPU provider | Ledger admission and reservations; actual allocation/release integration remains unqualified |
+| CoworkeRL helper/judge calls during training | Its configured Anthropic/Bedrock and OpenAI API access | No live training integration yet; these calls do not inherit the review clients' subscription authentication |
+
+The local two-invocation review allowance was a bounded validation setting. Its exhaustion says nothing about the user's remaining ChatGPT or Claude allowance. Increasing a local cap does not replenish provider quota, and adding reviewers does not create separate subscription allowances. Account-backed authentication has been tested locally; continuous unattended server use still needs qualification.
+
+Construction, offline tests and read-only CoworkeRL inspection can proceed without a training budget. A future actual campaign needs explicit compute/API limits and stopping rules because those resources are separate from reviewer access. See the [CoworkeRL execution contract](integrations/coworker-execution-contract.md) for the inspected training call paths.
+
 ## Implementation
 
 `src/workers/cli.ts` performs an official-client authentication-status check before each invocation. A recognized ChatGPT/Claude account method is required; an API login, unknown method, missing client or failed check is reported without making a model request. The process environment omits API keys, gateway overrides, cloud credentials and nested-agent variables. An already configured `CLAUDE_CODE_OAUTH_TOKEN` is forwarded only to the unmodified Claude client; the harness never logs, persists, refreshes or sends it to another backend. Normal client-managed credential storage remains inside the official client.

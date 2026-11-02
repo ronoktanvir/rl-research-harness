@@ -30,4 +30,6 @@ The `.harness` directory is ignored and is not a repository backup. Repeating pr
 
 ## Remaining qualification
 
-Current initial-review persistence is useful, but reliable structured output from both clients, durable criticism rounds, paper retrieval, autonomous experiment choice and controlled training execution remain incomplete. The passing local/Linux offline suite does not establish these missing capabilities.
+Explicit client output schemas and durable criticism/revision rounds are now implemented and tested offline. Reliable live structured output from both clients and a complete account-backed durable revision cycle remain unqualified. Paper retrieval, autonomous experiment choice and controlled training execution also remain incomplete. The passing local/Linux offline suite does not establish these external capabilities.
+
+A minimal future live check would admit two schema-constrained independent reviews first and stop if either is malformed, uncertain or held. If both succeed and revision is warranted, one proposal-only revision followed by both reviewers requires at most three further client invocations. This is a qualification plan, not an executed test or permission to exceed the existing local cap. Any separately admitted check must preserve the existing consumed units and failed campaign.
