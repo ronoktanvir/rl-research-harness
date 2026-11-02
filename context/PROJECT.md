@@ -10,13 +10,13 @@ The user explicitly selected **both conventional RL environments/policy training
 
 ## Present deliverable and status
 
-The current task is an evidence-based assessment of `razzant/ouroboros` and `earendil-works/pi`, followed by a reuse recommendation and durable design documents. It is not a request to provision cloud resources or launch training immediately.
+The task includes the assessment, implementation, a private repository, thoughtful commits and independent code review. The user selected **CoworkerRL** at `/Users/ronoktanvir/CoworkeRL` as the first integration and asked to use existing ChatGPT/Claude allowances. Building the harness does not start a full training campaign.
 
-Status: repository assessment and design completed; two independent repository audits, a primary-literature review, an initial architecture critique and a second review of the corrections are saved. No application runtime, cloud deployment, training run, or dependency installation has been completed. Upstream test bodies were inspected; tests were not executed.
+Status: assessment complete; `ronoktanvir/rl-research-harness` created and verified private. Initial code provides a Pi runtime adapter, structured council, subscription-backed CLI reviewers and read-only CoworkerRL inspection. Offline tests and one-message live Codex/Claude checks pass. Independent reviews found and corrected validation, mutation, process-cleanup and file-traversal defects. See `docs/implementation-status.md` for exact gaps. No cloud resource or CoworkerRL training run has been launched.
 
-Recommendation: qualify a pinned Pi durable runtime behind an owned interface; adapt selected Ouroboros memory, delegation, review and recovery contracts; build the research/experiment broker and separate Python adapters. The runtime decision remains provisional until implementation acceptance tests pass.
+Recommendation: own the research controller, support official subscription-backed workers and retain pinned Pi as an optional runtime. Adapt selected Ouroboros contracts; keep conventional RL and LLM adapters separate. Design requirements remain unimplemented wherever acceptance evidence is missing.
 
-Next implementation action: select the first tiny experiment in each track, define budgets and permitted worker access, then perform Stage 0 of `docs/roadmap.md`. The present user request was an assessment; these implementation stages are proposed next work.
+Next action: verify reviewed foundation commits and CI, then build the authoritative experiment ledger, persistent queue, admission/stop policy and CoworkerRL observation records. Read the full requirements audit before claiming completion. Training/deployment limits can be selected later; local implementation need not wait.
 
 ## Working assumptions
 
@@ -30,7 +30,7 @@ These are recommendations, not additional user requirements. Change them when ev
 
 ## Unknowns that affect implementation
 
-First concrete project and datasets; available GPUs or provider; monthly/per-project compute and model-call budgets; permitted external actions; target model families; storage retention; expected concurrency; and required recovery time. These do not prevent the repository assessment. Select them before enabling an unattended paid deployment.
+CoworkerRL is selected, but its first campaign, available GPUs/provider, compute limits, allowed external actions, retention, concurrency and recovery objectives remain unspecified. Subscription clients work locally; unattended server authentication and usage-reset handling remain unqualified. These do not prevent implementation or read-only integration. Do not interpret the subscription question as a request to train immediately.
 
 ## Read next
 

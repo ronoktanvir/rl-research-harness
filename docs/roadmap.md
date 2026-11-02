@@ -1,6 +1,6 @@
 # Implementation roadmap and acceptance gates
 
-Status: proposed work. No stages below have been implemented. The repository assessment and document review are complete; they are separate from these engineering milestones.
+Status: implementation underway. Runtime, council, subscription-worker and read-only CoworkerRL components now exist, but no full autonomous-experiment stage is complete. See `implementation-status.md` for verified capabilities and gaps; the gates below remain the target rather than a checklist inferred from partial code.
 
 ## Build evidence of reliability before expanding autonomy
 
