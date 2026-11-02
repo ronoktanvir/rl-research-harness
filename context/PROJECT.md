@@ -16,7 +16,7 @@ Status: assessment complete; `ronoktanvir/rl-research-harness` created and verif
 
 Recommendation: own the research controller, support official subscription-backed workers and retain pinned Pi as an optional runtime. Adapt selected Ouroboros contracts; keep conventional RL and LLM adapters separate. Design requirements remain unimplemented wherever acceptance evidence is missing.
 
-Next action: verify reviewed foundation commits and CI, then build the authoritative experiment ledger, persistent queue, admission/stop policy and CoworkerRL observation records. Read the full requirements audit before claiming completion. Training/deployment limits can be selected later; local implementation need not wait.
+The reviewed foundation is published through commit `33c77ebb42bec8f5fca7dcac51295b892597eff3`; all 72 offline tests pass locally and Linux CI passed with Node 24 and 25. Next action: build the authoritative experiment ledger, persistent queue, admission/stop policy and CoworkerRL observation records. Read the full requirements audit before claiming completion. Training/deployment limits can be selected later; local implementation need not wait.
 
 ## Working assumptions
 
@@ -41,6 +41,7 @@ CoworkerRL is selected, but its first campaign, available GPUs/provider, compute
 - `docs/repo-audits/`: inspected code and limitations.
 - `docs/research/evidence-and-standards.md`: research evidence and source status.
 - `docs/decisions/0001-runtime.md`: provisional runtime choice and reversal criteria.
+- `docs/ledger-implementation-brief.md`: next implementation contract and failure tests; still a proposal.
 
 ## Continuity rules
 

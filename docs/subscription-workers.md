@@ -4,7 +4,9 @@ Status: implemented for bounded evidence-only reviews through the official local
 
 ## Account access and API access are different
 
-Codex supports ChatGPT account sign-in, and `codex exec` reuses saved authentication. Its documentation includes account-authenticated automation on trusted private runners. API keys use separately billed API access. See [Codex authentication](https://learn.chatgpt.com/docs/auth?surface=cli) and [non-interactive operation](https://learn.chatgpt.com/docs/non-interactive-mode).
+Codex supports ChatGPT account sign-in, and `codex exec` reuses saved authentication. Its documentation includes account-authenticated automation on trusted private runners. API usage has a separate billing/credit balance. See [Codex authentication](https://learn.chatgpt.com/docs/auth?surface=cli) and [non-interactive operation](https://learn.chatgpt.com/docs/non-interactive-mode).
+
+As verified on 2026-11-01, eligible ChatGPT Pro and Business subscribers can activate included API credits. They do not increase signed-in Codex limits, and the benefit excludes Codex usage through API keys. Eligibility and activation for this user's account were not checked; no API fallback was enabled. See [API credit eligibility and coverage](https://developers.openai.com/api/docs/guides/chatgpt-api-credits).
 
 Anthropic permits an end user to sign into the unmodified Claude Code client with their subscription. Its documentation distinguishes that use from third-party applications collecting or routing users' subscription credentials. This harness calls the unmodified client; it does not implement Claude login or use Claude subscription tokens in Pi's API provider. See [Claude authentication and credential use](https://code.claude.com/docs/en/legal-and-compliance).
 

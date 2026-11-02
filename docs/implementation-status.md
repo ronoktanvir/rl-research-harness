@@ -7,7 +7,7 @@ Updated 2026-11-01, America/Los_Angeles. The full goal remains active and incomp
 | Requirement | Evidence | Status |
 |---|---|---|
 | Assess both repositories | Commit-pinned source audits, literature review and cross-reviewed design | Assessment complete; no upstream deployment certification |
-| Private repository and thoughtful history | `ronoktanvir/rl-research-harness`, visibility verified private; subsystem commits | Repository created; publication/CI tracked through GitHub |
+| Private repository and thoughtful history | `ronoktanvir/rl-research-harness`, visibility verified private; subsystem commits published | Foundation CI passed on Linux with Node 24 and 25 at `33c77ebb42bec8f5fca7dcac51295b892597eff3` |
 | Durable context | Agent instructions, project state, decisions, protocols and templates | Manually maintained; automatic projections pending |
 | Existing subscription access | Recognized account authentication and successful one-message Codex/Claude smoke tests | Bounded CLI review workers implemented; server authentication and quota-reset scheduling pending |
 | Council and self-criticism | Independent reviews, typed evidence/objections, bounded revisions, dissent and CLI integration | Implemented for supplied evidence packets; scientific utility not yet benchmarked |
@@ -32,4 +32,6 @@ CoworkerRL is selected at `/Users/ronoktanvir/CoworkeRL`. Existing ChatGPT/Claud
 
 The first campaign, compute limits, worker access and deployment policy remain unspecified. They do not block local implementation or read-only integration. Avoid repeatedly asking for them while independent work remains.
 
-Next: verify foundation publication/CI, then build the experiment ledger and persistent queue, link CoworkerRL observations to stable records, and qualify worker reconciliation before enabling training launches. These foundations do not replace the full autonomous-research objective.
+The foundation has 72 passing offline tests locally; [GitHub CI](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41380408556) passed on Linux with Node 24 and 25. This qualifies the tested code paths, not unattended deployment or scientific performance.
+
+Next: build the experiment ledger and persistent queue, link CoworkerRL observations to stable records, and qualify worker reconciliation before enabling training launches. These foundations do not replace the full autonomous-research objective.

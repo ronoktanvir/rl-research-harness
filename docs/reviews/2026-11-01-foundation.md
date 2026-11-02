@@ -18,6 +18,8 @@ Further checks detach reviewer outputs before validation, preserve invalid/missi
 
 Offline tests exercise real Pi SQLite state and kill subprocesses during tool execution. They test input validation, artifact consistency, process cleanup and confined reads. They make no external model requests and do not execute CoworkerRL training code.
 
+All 72 tests passed locally. [Linux CI](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41380408556) passed with Node 24 and 25 at commit `33c77ebb42bec8f5fca7dcac51295b892597eff3`, including type checks and the complete offline suite.
+
 Separate live smoke checks used Codex CLI 0.156.1 and Claude Code 2.1.281 with recognized account authentication and received the requested short response. This verifies basic client integration, not unattended quota recovery, billing accuracy or scientific quality.
 
 CoworkerRL was inspected read-only at HEAD `84b219f64f1152f8b02babea388bfbbfff41e75a`, with hashes of selected current files. A historical report was parsed without inferring live job state or verified optimizer restoration.
