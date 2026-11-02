@@ -96,9 +96,11 @@ export class LocalTaskQueue implements T.TaskQueue {
     return true;
   }
   claim(raw: T.ClaimTaskInput): T.TaskClaim | null {
-    const input = snap(raw); keys(input, ["workerId", "kinds"], ["workerId"]); id(input.workerId); if (input.kinds !== undefined) ids(input.kinds);
+    const input = snap(raw); keys(input, ["workerId", "kinds", "taskIds"], ["workerId"]); id(input.workerId); if (input.kinds !== undefined) ids(input.kinds);
+    if (input.taskIds !== undefined) { ids(input.taskIds); if (input.taskIds.length > 1000) fail("invalid", "At most 1,000 task IDs may be selected"); }
     return this.tx(() => { const now = this.clock();
       for (const row of this.all("SELECT id,not_before FROM tasks WHERE state='queued' ORDER BY rowid")) {
+        if (input.taskIds && !input.taskIds.includes(row.id as string)) continue;
         const task = this.getTask(row.id as string);
         if (Date.parse(task.deadlineAt) <= Date.parse(now)) { this.run("UPDATE tasks SET state='expired' WHERE id=?", task.taskId); this.event("task_expired", task.taskId, {}); continue; }
         if (task.attempts >= task.maxAttempts || Date.parse(row.not_before as string) > Date.parse(now) || (input.kinds && !input.kinds.includes(task.kind)) || task.cancelRequested) continue;

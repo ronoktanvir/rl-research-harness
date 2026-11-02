@@ -1,0 +1,27 @@
+# Archived council stage handlers
+
+The council handlers execute one review or one proposal revision from an immutable archived stage. They never reconstruct context from caller-supplied task JSON, retry a model call, switch accounts, or launch an experiment. Their four fixed queue kinds are `council-review-codex`, `council-review-claude`, `council-revise-codex`, and `council-revise-claude`. Every kind declares one official-client invocation unit, replay policy `never`, and the shared backend resource key (`codex:default` or `claude:default`). An invocation unit is not a provider-request count or a monetary charge.
+
+## Archive and task contract
+
+`council-contracts.ts` exports `CouncilPlanRequest`, `CouncilPlan`, `CouncilStage`, `validateCouncilPlanRequest`, `loadCouncilPlan`, `loadCouncilStage`, and `buildCouncilStage`. Plan and stage loaders check the ledger observation digest, source, project, null execution links, sequence, and content digest. Plans bind project/campaign identity, the initial evidence packet, reviewer assignments, reviser assignment, revision limit, and time window. Stages bind the plan digest, operation, round, backend/model selector and exact request digest. They preserve the initial question, criteria, checks and evidence across revisions; only proposal text, packet revision and creation time can change.
+
+Queued input contains exactly `{stageObservationId}`. `createCouncilTaskHandlers({ledger, projects, review?, now?})` takes an operator project allowlist and an optional injected official-client executor. `validate` resolves the stage and produces the fixed prompt before enqueue. `execute` additionally verifies task identity, input digest, fixed handler policy and the plan's time window. It invokes one client with a generated JSON output schema. The caller cannot add a prompt, choose a replacement backend, or inject prior rounds through queue input.
+
+This is a **trusted local controller API**, not an authenticated multi-tenant service. The workflow derives and archives context from validated cached task results. Hashes detect inconsistent bytes; they do not prove that an arbitrary writer's invented history occurred. A caller able to write arbitrary ledger observations can manufacture a self-consistent archive. The exported stage builder checks shape, bounded history, identities and fixed evidence; it does not duplicate the entire council protocol or authenticate historical client receipts. Production use needs exclusive controller access to these stores and must submit campaigns through the workflow.
+
+## Scientific output and execution outcome
+
+Review prompts include archived prior rounds and objections and require citations to existing evidence IDs. Successful client output passes the research validator for reviewer identity, packet digest, round, required criteria and objection ownership. A well-formed rejection is a completed review; missing or malformed scientific output is failed assessment, even when the client completed successfully.
+
+Revision output must be an object containing only nonempty `proposal` text, at most 100,000 characters. Responses containing replacement evidence, checks, revision numbers, or other fields fail. The workflow, rather than the model, constructs the next packet. Proposal revision therefore cannot turn an unknown independent check into a passing check.
+
+Result records include plan/stage/packet digests, operation, round, backend, requested model selector, successful or unsuccessful client receipt metadata, and the response hash/byte count. The selected model is a request, not independent proof of which model served it. Client account authentication and billing remain with the official Codex/Claude clients; these handlers do not read credentials or fall back to paid APIs.
+
+Quota and authentication outcomes create their respective waiting states without inventing a reset time. An operator may explicitly release a hold and resume an eligible task; the new attempt consumes another invocation allowance and remains subject to the original attempt limit and deadline. Client timeout, interruption, malformed receipts, thrown calls and ambiguous failures remain uncertain. Only explicit preflight/spawn failures establish known failure before a reviewer request. The queue and runner own durable attempt accounting, resource holds, sole-ledger stop authority, deadline cancellation and uncertain recovery. Directly calling a handler is not a substitute for those controls.
+
+## Bounds and qualification
+
+Plans allow 1–12 reviewers and 0–5 revisions. Archive records retain the ledger's 2 MiB limit; generated stage prompts are capped at 512,000 bytes and returned text at 1,000,000 bytes. Client timeout is at most 120 seconds and never exceeds the remaining plan deadline. Diagnostic lists are bounded while preserving their original issue count. Large accumulated history fails validation instead of being silently summarized or truncated.
+
+`test/scheduler/council-handlers.test.ts` qualifies later-round prompts, fixed schemas, context and evidence tampering, proposal-only output, assignment and scheduling checks, quota/auth/uncertain distinctions, cancellation and archive close/reopen. All calls in that suite use deterministic injected clients. This establishes local contract behavior, not live provider formatting reliability, scientific validity or conference-level research quality.

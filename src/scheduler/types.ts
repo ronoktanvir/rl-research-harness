@@ -17,7 +17,7 @@ export interface QueueBudgetInput { scopeId: string; expectedVersion: number; ma
 export interface QueueBudget { scopeId: string; version: number; maxCalls: number; maxParallel: number; consumedCalls: number; activeAttempts: number }
 export interface ResourceHold { resourceKey: string; version: number; held: boolean; reason: "quota" | "auth" | null; retryAt: string | null; notBefore: string | null }
 export interface ReleaseResourceInput { resourceKey: string; expectedVersion: number; evidence: JsonObject; notBefore?: string }
-export interface ClaimTaskInput { workerId: string; kinds?: string[] }
+export interface ClaimTaskInput { workerId: string; kinds?: string[]; taskIds?: string[] }
 export interface TaskClaim { task: TaskRecord; attemptId: string; workerId: string; authority: QueueAuthority; claimedAt: string }
 export interface TaskOutcomeInput {
   resultId: string; taskId: string; attemptId: string;

@@ -5,6 +5,7 @@ import { openExperimentLedger } from "../ledger/index.ts";
 import { id, integer, keys, object, text } from "../ledger/validation.ts";
 import { openTaskQueue, QueueError } from "./index.ts";
 import { createResearchTaskHandlers } from "./handlers.ts";
+import { createCouncilTaskHandlers } from "./council-handlers.ts";
 import { ledgerAuthority, registerResearchHandlers } from "./runner.ts";
 import type { ExperimentLedger } from "../ledger/types.ts";
 import type { ResearchTaskHandler, ResearchTaskHandlerOptions } from "./handlers.ts";
@@ -88,7 +89,9 @@ export function openConfiguredHarness(raw: HarnessConfig,
     const fixedQueue = queue;
     const projects = Object.fromEntries(Object.entries(config.projects).map(([projectId, value]) => [projectId,
       { root: value.root, summaryDirectory: value.summaryDirectory }]));
-    const handlers = createResearchTaskHandlers({ ...injections, ledger, projects });
+    const handlers = [...createResearchTaskHandlers({ ...injections, ledger, projects }),
+      ...createCouncilTaskHandlers({ ledger, projects: Object.keys(projects),
+        ...(injections.review ? { review: injections.review } : {}), ...(injections.now ? { now: injections.now } : {}) })];
     registerResearchHandlers(queue, handlers);
     for (const [scopeId, value] of [["global", config.limits], ...Object.entries(config.projects).map(([projectId, project]) => [`project:${projectId}`, project.limits])] as [string, InvocationLimits][]) {
       let previous;

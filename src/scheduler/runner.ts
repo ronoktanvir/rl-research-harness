@@ -34,6 +34,8 @@ export function enqueueResearchTask(queue: TaskQueue, handlers: readonly Researc
 
 export interface RunnerOptions {
   workerId: string;
+  /** Optional exact task selection; admission and shared caps still apply. */
+  taskIds?: string[];
   signal?: AbortSignal;
   maxExecutionMs?: number;
   cleanupGraceMs?: number;
@@ -116,13 +118,15 @@ async function invoke(queue: TaskQueue, handler: ResearchTaskHandler, claim: Tas
 export async function runNextResearchTask(queue: TaskQueue, handlers: readonly ResearchTaskHandler[],
   options: RunnerOptions): Promise<TaskRecord | null> {
   const workerId = options.workerId, signal = options.signal;
+  const taskIds = options.taskIds === undefined ? undefined : structuredClone(options.taskIds);
   const executionLimit = milliseconds(options.maxExecutionMs, 180_000, 3_600_000);
   const grace = milliseconds(options.cleanupGraceMs, 2_000, 30_000);
   const poll = milliseconds(options.authorityCheckMs, 100, 5_000);
   const now = (options.now ?? (() => new Date()))();
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error("Invalid runner clock");
   if (signal?.aborted) return null;
-  const claim = queue.claim({ workerId, kinds: handlers.map(handler => handler.policy.kind) });
+  const claim = queue.claim({ workerId, kinds: handlers.map(handler => handler.policy.kind),
+    ...(taskIds !== undefined ? { taskIds } : {}) });
   if (!claim) return null;
   const handler = handlers.find(item => item.policy.kind === claim.task.kind && item.policy.version === claim.task.handlerVersion);
   let outcome: HandlerOutcome;
