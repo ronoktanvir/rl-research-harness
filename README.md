@@ -40,6 +40,8 @@ The [local conventional adapter](docs/integrations/conventional-local.md) runs f
 
 The [supervised conventional integration](docs/integrations/conventional-supervised.md) binds one training replica to an admitted run, a fixed deployment and a recoverable service. Collection joins exact terminal observations to result bytes and leaves scientific evaluation unassessed. The [publisher protocol](docs/publisher-paper-protocol.md) keeps retrieval, text extraction and scientific review separate; its [first actual retrieval](docs/research/publisher-qualification-2026-11-02.md) preserved a complete publisher PDF and its hash.
 
+The [historical evidence follow-up](docs/research/historical-evidence-followup.md) recovers Run-1 source/adapter identities and a held-out bare-base comparison. It preserves the absence of a matched training control and distinguishes producer scores from independently validated task success. These observations are archived without closing the scientific evidence requests.
+
 ## Use existing subscriptions
 
 ```sh

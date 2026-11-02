@@ -1,26 +1,9 @@
-# Paused checkpoint — 2026-11-02 UTC
+# Resume state
 
-The user requested a temporary pause while walking home without Wi-Fi. Resume only when the user resumes the task. The full harness objective remains incomplete.
+The user resumed after the temporary Wi-Fi pause. All three saved local commits were published to the existing private repository. The expanded Linux workflow is committed, and corrected source `ac4c4833034116037e1270682dd18434a6f9c11a` passed CI41408770639. No native validation from the paused checkpoint remains pending.
 
-## Completed and verified
+Read `context/PROJECT.md` for the current objective, resource boundaries and next work. The exact native results and first test-diagnostic failure are retained in `docs/research/supervised-publisher-ci-qualification.md`. The historical CoworkerRL evidence investigation must preserve exact artifact identity rather than joining repeated run labels.
 
-- Supervised conventional RL planning, deployment resolution, atomic child output and exact journal/artifact collection are implemented and independently reviewed.
-- Publisher PDF retrieval, bounded Linux page extraction, CLI commands and source provenance are implemented and independently reviewed.
-- Final local verification: TypeScript check passed; 471 Node tests passed, zero failed, four explicit native skips; 26 Python tests passed; diff check passed.
-- All three subagents finished. No local services, training job or model request is running.
-- One actual publisher PDF was retrieved and reloaded offline; see `docs/research/publisher-qualification-2026-11-02.md`. The new native parser has not processed that PDF.
-- The two-unit live official-client allowance remains consumed. No additional live model call is authorized by this checkpoint. The existing arXiv hold remains active and must not be bypassed or released without evidence.
+The ignored `.harness/ci-planned.yml` is the old preparation artifact, not the authoritative workflow. Use committed `.github/workflows/ci.yml`. `gh` still lacks workflow scope; future workflow changes use the GitHub connector after fetching the current blob SHA. Ordinary source pushes use Git.
 
-## Next concrete work
-
-1. Publish the local reviewed commits to the existing private repository. The previously published HEAD was `96de155b16fbe893499c360a1c48eed7c0ba3b97`.
-2. Apply the planned CI change using the GitHub connector: `gh` has no workflow scope. The intended complete workflow is saved in ignored `.harness/ci-planned.yml`; re-fetch `.github/workflows/ci.yml` and its current blob SHA before updating. Do not blindly overwrite intervening changes.
-3. The planned workflow creates a copied Python 3.11 venv at `/tmp/rlh-conventional-venv`, outside systemd's hidden `/home`, and enables `test/conventional/supervised-linux.test.ts` only in the isolated CI fixture. It adds a Python 3.12/pypdf6.10.0 job for `test/literature/pdf-native.test.ts`. No services or Docker runs on the local Mac.
-4. Inspect actual CI job outcomes/logs for the exact source revision. Fix substantive failures, then update qualification/status/context. Native success is currently **pending**, not established by the offline tests.
-5. Continue toward CoworkerRL deployment/input closure, completion of evidence requests, protected scientific evaluation and autonomous campaign selection. Full-paper text extraction does not constitute claim review.
-
-## Important local artifacts
-
-The authoritative local stores are ignored `.harness/coworker.sqlite` and `.harness/research-queue.sqlite`; the saved controller configuration is `.harness/controller.json`. Never commit these, the private PDFs, dependency environments or credentials. The final local Node log is `.harness/current-tests.log`. The live publisher request/result are `.harness/publisher-qualification-request.json` and `.harness/publisher-qualification-result.json`.
-
-The native tests are already committed as opt-in fixtures but were skipped locally. Do not make additional publisher/arXiv/model calls merely to repeat completed qualification. No Droplet or CoworkerRL campaign has been deployed or started.
+The original live model-call cap remains consumed, the arXiv hold remains active, and no CoworkerRL campaign or Droplet deployment is enabled. Do not repeat completed model/publisher requests merely because the session resumed.
