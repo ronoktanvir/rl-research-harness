@@ -2,7 +2,7 @@
 
 A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
-The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger connected to a local Linux supervisor, CoworkerRL capture/assessment and persistent diagnostic workflows, a bounded conventional RL adapter, attempt/byte/native-output checks, a persistent task queue, and bounded arXiv metadata/abstract ingestion. CoworkerRL execution, general training adapters, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
+The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger connected to a local Linux supervisor, CoworkerRL capture/assessment and persistent diagnostic workflows, a bounded conventional RL adapter, attempt/byte/native-output checks, a persistent task queue, arXiv metadata ingestion, and primary-publisher PDF retrieval with bounded page extraction. CoworkerRL execution, general training adapters, automated scientific paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
 
 ## Run locally
 
@@ -37,6 +37,8 @@ The [deterministic assessment](docs/integrations/coworker-assessment.md) scans a
 The [assessment workflow](docs/assessment-workflow.md) connects captured evidence to a zero-call queue task and persistent unresolved work items. `assessment-prepare`, `assessment-run` and `assessment-advance` preserve source/rule bindings across restart. Completing an assessment does not resolve its scientific questions.
 
 The [local conventional adapter](docs/integrations/conventional-local.md) runs fixed-map FrozenLake with separately trained policies, frozen evaluation and one shared random baseline. It requires a pinned Python 3.11 environment and an explicit `conventional-run` command. The [first real qualification](docs/research/conventional-qualification-2026-11-02.md) retains all three policy outcomes; it is an engineering result, not a general learning claim or a CoworkerRL campaign.
+
+The [supervised conventional integration](docs/integrations/conventional-supervised.md) binds one training replica to an admitted run, a fixed deployment and a recoverable service. Collection joins exact terminal observations to result bytes and leaves scientific evaluation unassessed. The [publisher protocol](docs/publisher-paper-protocol.md) keeps retrieval, text extraction and scientific review separate; its [first actual retrieval](docs/research/publisher-qualification-2026-11-02.md) preserved a complete publisher PDF and its hash.
 
 ## Use existing subscriptions
 
