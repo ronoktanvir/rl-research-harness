@@ -1,6 +1,6 @@
 # Project context
 
-Updated: 2026-11-02, America/Los_Angeles. The user resumed after the temporary Wi-Fi pause. The full research-harness objective remains incomplete.
+Updated: 2026-11-02, America/Los_Angeles. The user explicitly requested a pause at the completed replay-planning checkpoint. Resume only when requested; read `context/RESUME.md`. The full research-harness objective remains incomplete.
 
 ## Objective and authorization
 
@@ -11,6 +11,8 @@ The user selected both conventional RL and LLM post-training through separate ad
 The architecture owns the research controller and experiment broker, uses official subscription-backed workers, keeps Pi1.4.0 behind an optional runtime interface, and adapts selected Ouroboros persistence/review contracts. See `docs/reuse-plan.md`, `docs/architecture.md` and the pinned audits. Neither upstream is a ready-made scientific decision system.
 
 ## Current verified state
+
+Latest source `f2b60b020b9c7a331e24bee63a232d2c619d0bfd` is pushed and passed Linux CI41430029153. Local typecheck and all 598 tests passed, with four explicit native-suite skips (602 total). The final independent review corrected report BOM decoding; both original native bundles reload under the correction with their execution digests unchanged. Detailed qualification is in `docs/research/replay-evidence-planning-qualification.md`; the following paragraph records the preceding source's verified job-level counts.
 
 `ronoktanvir/rl-research-harness` is private, reverified after resumption. Source `cfc80867790fa35cf2f22df0e0bc6ac82d0cea8c` passed CI41426337585: 560 TypeScript tests on each of Node24.22.1/25.9.0, four explicit native skips, 15 investigation, 16 scorer-probe and ten replay Python tests. The last two commands skip two and twelve private-source tests respectively. Separate conventional RL, real Linux supervisor and publisher-PDF jobs passed. Actual pinned scorer and replay execution were qualified locally; replay also has native rejection/cancellation and fresh-process offline recovery evidence. Read `docs/research/observed-replay-adapter-qualification.md` for exact receipts/job IDs and scope. Typecheck and diff check passed.
 
