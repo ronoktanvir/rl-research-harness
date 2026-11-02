@@ -47,3 +47,5 @@ The controller subsequently checked the original capture's own digest, re-read i
 - Embedded investigation artifact: 21,485 bytes, SHA256 `a5b881be1502709ed39b5367efccc77b716716c8a21429e4fbdb70ea3845e71a`.
 
 Before/after checks confirmed that project runs, actions and follow-up observations were unchanged. All three requests remain unresolved. The receipt explicitly records a manual evidence investigation, not an automated handler result, scientific approval, executable historical manifest or authorization for another experiment. The arXiv hold remains active.
+
+A subsequent [automated investigation](automated-investigation-qualification.md) reproduced these byte/count checks through the fixed reader, persistent queue and archive. Its separate receipt preserves the same scientific limitations; it does not relabel this manual observation as an automated result.

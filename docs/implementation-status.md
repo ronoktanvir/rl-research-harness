@@ -1,13 +1,15 @@
 # Implementation status against the full objective
 
-Updated 2026-11-01, America/Los_Angeles. The full goal remains active and incomplete.
+Updated 2026-11-02, America/Los_Angeles. The full goal remains active and incomplete.
+
+The latest [investigation workflow](investigation-workflow.md) adds a fixed read-only parser, source-pinned zero-call task and durable evidence receipt. It passed 504 local TypeScript tests and 15 Python cases, then reproduced the existing Run-1 source/adapter/evaluation checks through separate CLI processes. A restart returned the same receipt with one attempt; all three scientific requests and resource limits remained unchanged. The [qualification record](research/automated-investigation-qualification.md) distinguishes this result from scorer validity and causal training evidence, and records the successful expanded Linux CI run.
 
 ## Current evidence
 
 | Requirement | Evidence | Status |
 |---|---|---|
 | Assess both repositories | Commit-pinned source audits, literature review and cross-reviewed design | Assessment complete; no upstream deployment certification |
-| Private repository and thoughtful history | `ronoktanvir/rl-research-harness`, visibility reverified private after resumption; subsystem commits published | Source `ac4c4833034116037e1270682dd18434a6f9c11a` passed 471 offline tests on Node24/25 plus separate native supervisor, supervised RL and PDF checks |
+| Private repository and thoughtful history | `ronoktanvir/rl-research-harness`, visibility reverified private after resumption; subsystem commits published | Source `f62d2cace4459d759c2f797f668b81cbb4f45605` passed 504 offline tests on Node 24/25, 15 investigation Python tests and separate native supervisor, supervised RL and PDF checks |
 | Durable context | Agent instructions, project state, decisions, protocols, templates and ledger-derived JSON/Markdown snapshots | Operational export implemented; scientific context remains manually maintained and automatic refresh/retrieval is pending |
 | Existing subscription access | Recognized account authentication, successful smoke tests and completed account-backed Codex/Claude report-review calls | Codex live structured review valid; Claude live output malformed. Server authentication, reset discovery and output-format reliability remain unqualified |
 | Council and self-criticism | Independent reviews, typed evidence/objections, durable critic/reviser stages, preserved dissent and CLI integration | Complete bounded rounds recover across restart in offline qualification; live schema compliance and scientific utility remain unqualified |
