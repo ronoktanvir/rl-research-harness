@@ -62,10 +62,39 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Check environment and evaluation semantics without Gymnasium
         run: python -I -B -m unittest discover -s test/conventional -p '*test.py' -v
-      - run: python -m venv .harness/conventional-venv
+      - run: python -m venv --copies /tmp/rlh-conventional-venv
       - name: Install the pinned scientific dependency closure
-        run: .harness/conventional-venv/bin/python -m pip --disable-pip-version-check install --require-hashes -r src/integrations/conventional/requirements.lock
+        run: /tmp/rlh-conventional-venv/bin/python3.11 -m pip --disable-pip-version-check install --require-hashes -r src/integrations/conventional/requirements.lock
       - name: Qualify the actual bounded CPU environment
         env:
-          HARNESS_TEST_CONVENTIONAL_PYTHON: ${{ github.workspace }}/.harness/conventional-venv/bin/python
+          HARNESS_TEST_CONVENTIONAL_PYTHON: /tmp/rlh-conventional-venv/bin/python3.11
         run: node --import tsx --test test/conventional/native.test.ts
+      - name: Qualify admitted Gymnasium execution and controller recovery
+        env:
+          HARNESS_TEST_SYSTEMD: '1'
+          HARNESS_TEST_CONVENTIONAL_SUPERVISED_PYTHON: /tmp/rlh-conventional-venv/bin/python3.11
+        run: node --import tsx --test test/conventional/supervised-linux.test.ts
+
+  publisher-pdf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts
+      - run: python -m venv .harness/pdf-venv
+      - name: Install the pinned PDF parser
+        run: .harness/pdf-venv/bin/python -m pip --disable-pip-version-check install --require-hashes -r src/literature/requirements.lock
+      - name: Qualify actual bounded page extraction and archive provenance
+        env:
+          HARNESS_TEST_PDF_PYTHON: ${{ github.workspace }}/.harness/pdf-venv/bin/python
+        run: node --import tsx --test test/literature/pdf-native.test.ts
+
