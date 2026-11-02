@@ -46,4 +46,18 @@ The 24 independent TypeScript tests cover request identity and inert input, comp
 
 The final local full suite reports 564 tests: 560 passed and four explicitly skipped native suites. `npm run test:replay` separately passes all 24 TypeScript tests and the ten default Python cases, with twelve private-source cases explicitly skipped in that default command. Those twelve passed in the separate opted-in qualification above. Typecheck and whitespace checks pass. An intermediate run failed two synthetic tests whose rejection-code spelling differed from the real worker; the fixtures now use the actual code and also check rejection of unknown codes. The semantic labels were unchanged.
 
+## Linux CI
+
+Source `cfc80867790fa35cf2f22df0e0bc6ac82d0cea8c` passes [CI41426337585](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41426337585). This includes implementation commit `5ebcb17` and the subsequent replay-boundary workflow step. Job status and decoded logs were checked after completion.
+
+| Job | ID | Verified result |
+|---|---|---|
+| Node24.22.1 |125213738117|560 TypeScript passes, four explicit native skips; 15 investigation, 16 scorer-probe and ten replay Python passes |
+| Node25.9.0 |125213738317|Same counts; both Python jobs use CPython3.11.17 |
+| Linux supervisor |125213738300|Seven real CPU service cases plus their parent pass |
+| Conventional RL |125213738289|26 Python cases and both native/supervised Gymnasium acceptance tests pass |
+| Publisher PDF |125213738004|Native parser/archive acceptance test passes on CPython3.12.15 |
+
+The scorer-probe command explicitly skips two private-source tests and the replay command skips twelve. Separate local qualification supplies the native replay evidence above; CI does not contain the private CoworkeRL package or fixtures. These service tests ran in isolated Linux CI, not on the user's machine.
+
 These results do not validate a semantic evaluator, authenticate historical custody, evaluate live helpers or qualify unattended deployment. Next work is to archive these observations into the research evidence/planning workflow, preserve independently bound semantic annotations, and design the missing controls. The adapter cannot close the existing scientific evidence requests on its own.
