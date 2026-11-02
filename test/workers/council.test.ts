@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { createEvidencePacket } from "../../src/research/index.ts";
 import { runCliCouncil } from "../../src/workers/council.ts";
 import type { CliTaskResult } from "../../src/workers/cli.ts";
+import { reviewJsonSchema, revisionJsonSchema } from "../../src/workers/output-schema.ts";
 
 function packet() {
   return createEvidencePacket({
@@ -25,6 +26,7 @@ test("official-client routing preserves independent inputs and validates the ret
         reviewer: { id: string }; packet: { digest: string }; previousRounds: unknown[];
       };
       inputs.push(input);
+      assert.deepEqual(task.outputSchema, reviewJsonSchema({ reviewerId: input.reviewer.id, packetDigest: input.packet.digest, round: 0 }));
       const review = {
         schemaVersion: 1, reviewerId: input.reviewer.id, packetDigest: input.packet.digest, round: 0,
         recommendation: "approve", observations: [{ text: "The fixture is recorded", evidenceIds: ["fixture"] }], interpretations: [],
@@ -57,6 +59,41 @@ test("successful client with malformed JSON remains a malformed review, not a pr
   const decision = await runCliCouncil({ councilId: "malformed-review", packet: packet(), maxRevisions: 0,
     workers: [{ id: "methods", role: "Methods", backend: "codex" }],
     execute: async task => ({ backend: task.backend, status: "succeeded", text: "not JSON", billing: "client_managed_account" }),
+  });
+  assert.equal(decision.status, "blocked");
+  assert.equal(decision.rounds[0]!.reviews[0]!.status, "malformed");
+});
+
+test("revision uses a proposal-only schema and rejects attempts to rewrite evidence", async () => {
+  let calls = 0;
+  const decision = await runCliCouncil({ councilId: "revision-contract", packet: packet(), maxRevisions: 1,
+    workers: [{ id: "methods", role: "Methods", backend: "codex" }], reviser: { backend: "claude" },
+    execute: async task => {
+      calls++;
+      if (calls === 1) return { backend: task.backend, status: "succeeded", text: "", billing: "client_managed_account" };
+      assert.deepEqual(task.outputSchema, revisionJsonSchema());
+      assert.match(task.prompt, /preserves the research question, evidence, checks and criteria/u);
+      return { backend: task.backend, status: "succeeded", text: '{"proposal":"different","evidence":[]}', billing: "client_managed_account" };
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(decision.stopReason, "revision_error");
+  assert.match(decision.blockers.join(" "), /only proposal text/u);
+  assert.deepEqual(decision.rounds[0]!.packet.evidence, packet().evidence);
+});
+
+test("a schema-compatible approval with fabricated evidence still fails semantic validation", async () => {
+  const proposal = packet();
+  const decision = await runCliCouncil({ councilId: "fabricated-citation", packet: proposal, maxRevisions: 0,
+    workers: [{ id: "methods", role: "Methods", backend: "codex" }], execute: async task => {
+      assert.ok(task.outputSchema);
+      return { backend: task.backend, status: "succeeded", billing: "client_managed_account", text: JSON.stringify({
+        schemaVersion: 1, reviewerId: "methods", packetDigest: proposal.digest, round: 0, recommendation: "approve",
+        observations: [{ text: "Imagined result", evidenceIds: ["not-in-packet"] }], interpretations: [],
+        criteria: [{ criterionId: "reproducibility", status: "satisfied", summary: "Claimed success", evidenceIds: ["not-in-packet"] }],
+        objections: [], resolutions: [], rationale: { text: "Claimed approval", evidenceIds: ["not-in-packet"] },
+      }) };
+    },
   });
   assert.equal(decision.status, "blocked");
   assert.equal(decision.rounds[0]!.reviews[0]!.status, "malformed");

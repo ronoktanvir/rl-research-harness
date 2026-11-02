@@ -10,6 +10,7 @@ import { createResearchTaskHandlers } from '../../src/scheduler/handlers.ts';
 import type { ResearchTaskHandler, ResearchTaskHandlerOptions } from '../../src/scheduler/handlers.ts';
 import type { TaskClaim } from '../../src/scheduler/types.ts';
 import type { CliTask, CliTaskResult } from '../../src/workers/cli.ts';
+import { reviewJsonSchema } from '../../src/workers/output-schema.ts';
 
 const projectId = 'study';
 const observedAt = '2026-11-02T01:00:00.000Z';
@@ -52,6 +53,7 @@ test('one fixed-client review completes with useful negative scientific findings
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.backend, 'codex');
   assert.equal(calls[0]?.model, 'fixture-model');
+  assert.deepEqual(calls[0]?.outputSchema, reviewJsonSchema({ reviewerId: 'methods', packetDigest: (taskInput.packet as JsonObject).digest as string, round: 0 }));
   assert.match(calls[0]!.prompt, /Assess only the supplied evidence packet/u);
   assert.match(calls[0]!.prompt, /"previousRounds":\[\],"objections":\[\]/u);
   assert.equal(result.status, 'completed');

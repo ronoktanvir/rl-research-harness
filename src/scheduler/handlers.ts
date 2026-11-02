@@ -9,6 +9,7 @@ import type { EvidencePacket, ReviewRequest } from '../research/types.ts';
 import { reviewPrompt } from '../workers/council.ts';
 import { runCliReview } from '../workers/cli.ts';
 import type { CliBackend, CliTask, CliTaskResult } from '../workers/cli.ts';
+import { reviewJsonSchema } from '../workers/output-schema.ts';
 import type { HandlerPolicy, TaskClaim, TaskOutcomeInput } from './types.ts';
 
 export type HandlerOutcome = Pick<TaskOutcomeInput, 'status' | 'result' | 'retryAt'>;
@@ -156,6 +157,7 @@ export function createResearchTaskHandlers(options: ResearchTaskHandlerOptions):
     let client: CliTaskResult | null;
     try {
       client = clientResult(await review({ backend, prompt: prompt(input, signal), timeoutMs: input.timeoutMs, signal,
+        outputSchema: reviewJsonSchema({ reviewerId: input.reviewer.id, packetDigest: input.packet.digest, round: 0 }),
         ...(input.model !== null ? { model: input.model } : {}) }), backend);
     } catch {
       return outcome('uncertain', { reason: 'client_invocation_threw', backend, modelSelector: input.model, invocationStarted: true });

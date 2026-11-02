@@ -1,8 +1,10 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runProcess } from "./process.ts";
 import type { ProcessRequest, ProcessResult } from "./process.ts";
+import type { JsonObject } from "../ledger/types.ts";
+import { serializeOutputSchema } from "./output-schema.ts";
 
 export type CliBackend = "codex" | "claude";
 export type CliStatus = "succeeded" | "rate_limited" | "auth_required" | "failed" | "cancelled" | "timed_out";
@@ -13,6 +15,8 @@ export interface CliTask {
   model?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Optional object JSON Schema; bounded and copied before client invocation. */
+  outputSchema?: JsonObject;
 }
 
 export interface CliTaskResult {
@@ -100,7 +104,7 @@ function failureStatus(message: string): CliStatus {
 }
 
 /** Parse only final client protocol results. A partial answer cannot count as a completed review. */
-export function parseCliResult(backend: CliBackend, result: ProcessResult): CliTaskResult {
+export function parseCliResult(backend: CliBackend, result: ProcessResult, options: { structuredOutput?: boolean } = {}): CliTaskResult {
   const base = { backend, text: "", billing: "client_managed_account" as const };
   if (result.stopped) {
     const status = result.stopped === "timeout" ? "timed_out" : result.stopped === "cancelled" ? "cancelled" : "failed";
@@ -117,7 +121,11 @@ export function parseCliResult(backend: CliBackend, result: ProcessResult): CliT
       const event: unknown = JSON.parse(result.stdout);
       if (!object(event) || event.type !== "result") throw new Error("No Claude result record");
       completed = event.subtype === "success" && event.is_error === false;
-      if (typeof event.result === "string") text = event.result;
+      if (options.structuredOutput) {
+        // Claude's JSON result envelope is distinct from its structured answer.
+        // A missing field may indicate refusal; do not guess from prose in result.
+        if (Object.hasOwn(event, "structured_output")) text = JSON.stringify(event.structured_output);
+      } else if (typeof event.result === "string") text = event.result;
       if (typeof event.session_id === "string") sessionId = event.session_id;
       tokenUsage = usage(event.usage);
       if (!completed) failures.push(JSON.stringify(event));
@@ -136,8 +144,15 @@ export function parseCliResult(backend: CliBackend, result: ProcessResult): CliT
   } catch {
     return { ...base, status: failureStatus(result.stderr), diagnostic: "invalid_client_output" };
   }
-  if (result.exitCode !== 0 || !completed || failures.length || !text.trim()) {
+  if (result.exitCode !== 0 || !completed || failures.length) {
     return { ...base, status: failureStatus([...failures, ...errors, result.stderr].join("\n")), diagnostic: "client_did_not_complete" };
+  }
+  // Preserve a completed protocol result even when its answer is missing or
+  // malformed. The research validator must distinguish that from an uncertain
+  // client failure. In schema mode this also covers Claude refusals without a
+  // structured_output field; no unstructured fallback is used.
+  if (!options.structuredOutput && !text.trim()) {
+    return { ...base, status: failureStatus([...errors, result.stderr].join("\n")), diagnostic: "client_did_not_complete" };
   }
   return {
     ...base, status: "succeeded", text,
@@ -148,11 +163,22 @@ export function parseCliResult(backend: CliBackend, result: ProcessResult): CliT
 
 /** A bounded evidence-only reviewer. It never switches to an API key or another account. */
 export async function runCliReview(task: CliTask, options: CliWorkerOptions = {}): Promise<CliTaskResult> {
+  // Keep routing, prompt bounds and schema selection tied to one submitted task,
+  // even if the caller mutates its object while authentication is in progress.
+  task = { ...task };
   if (task.backend !== "codex" && task.backend !== "claude") throw new Error("Unsupported CLI backend");
   if (!task.prompt.trim() || Buffer.byteLength(task.prompt) > 512_000) throw new Error("Prompt must contain 1–512,000 bytes");
   const args = reviewArguments(task.backend, task.model);
+  const schema = task.outputSchema === undefined ? undefined : serializeOutputSchema(task.outputSchema);
   const cwd = await mkdtemp(join(tmpdir(), "rl-harness-review-"));
   try {
+    if (schema !== undefined) {
+      if (task.backend === "codex") {
+        const schemaPath = join(cwd, "output-schema.json");
+        await writeFile(schemaPath, schema, { encoding: "utf8", flag: "wx", mode: 0o600 });
+        args.splice(args.length - 1, 0, "--output-schema", schemaPath);
+      } else args.push("--json-schema", schema);
+    }
     const execute = options.execute ?? runProcess;
     const executable = options.executables?.[task.backend] ?? task.backend;
     const env = subscriptionEnvironment(options.environment ?? process.env, task.backend);
@@ -178,7 +204,7 @@ export async function runCliReview(task: CliTask, options: CliWorkerOptions = {}
       maxOutputBytes: 2_000_000,
       ...(task.signal ? { signal: task.signal } : {}),
     });
-    return parseCliResult(task.backend, result);
+    return parseCliResult(task.backend, result, { structuredOutput: schema !== undefined });
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
