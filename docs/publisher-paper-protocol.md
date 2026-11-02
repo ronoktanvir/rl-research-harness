@@ -2,6 +2,8 @@
 
 The publisher importer archives exact PDF bytes and separately records bounded page text. Retrieval, extraction and scientific review are distinct: none of these records verifies a paper's claims, venue acceptance, novelty or relevance to an experiment.
 
+The real Linux parser/archive fixture passed at `ac4c4833034116037e1270682dd18434a6f9c11a`; see the [native qualification record](research/supervised-publisher-ci-qualification.md) for exact runtime versions and tested limits. The actual publisher retrieval is recorded separately and remains scientifically unreviewed by this ingestion pipeline.
+
 ## Allowed source and request contract
 
 `retrievePublisherPaper(archive, request, options)` accepts `{projectId, paperId, url, timeoutMs?, maxPdfBytes?}`. The operator supplies a private `artifactDirectory` through options; task input cannot choose a filesystem path. Initial support is restricted to HTTPS on `proceedings.neurips.cc` or `papers.neurips.cc`, using the fixed `/paper_files/paper/<year>/file/<32-character-hex>-(Paper|Paper-Conference|Supplemental).pdf` path forms. Credentials, ports, queries, fragments and normalized/encoded path alternatives are rejected. Redirects are rejected, including redirects between allowed hosts. No embedded PDF link, DOI or reference is fetched.

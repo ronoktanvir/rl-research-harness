@@ -55,4 +55,6 @@ A repeated collection ID returns its original observation after verifying the fu
 
 ## Qualification boundary
 
+The corrected native integration passed at `ac4c4833034116037e1270682dd18434a6f9c11a` in [Linux CI](../research/supervised-publisher-ci-qualification.md). That record preserves the initial fixture-diagnostic failure, exact tested versions and the separation between process/collection success and scientific validity.
+
 Offline tests exercise real temporary ledgers/journals with injected supervisor observations, lost-response recovery after reopening, source/manifest/profile binding, read-only preparation, harmless entry subprocesses, no-overwrite publication, symlink rejection and incomplete collection. The native Linux test is explicitly opt-in and must be reported separately with its CI revision/result. Passing offline tests does not establish that the real system manager, dependency deployment or Gymnasium workload has passed that native test.

@@ -20,6 +20,8 @@ Retrieval occurred during development before the later body-cancellation quarant
 
 The local macOS runtime could not install the required address-space limit. The parser therefore requires Linux and tests its actual resource limits before importing pypdf. No extraction was attempted on this archived PDF through the new parser. Linux CI uses a separate three-page synthetic document to test real parsing, whitespace-only pages, page/text limits, encrypted/malformed input and archive provenance.
 
+That synthetic parser/archive path subsequently passed on Python3.12.15 and pypdf6.10.0 at source `ac4c4833034116037e1270682dd18434a6f9c11a`; see [native qualification](supervised-publisher-ci-qualification.md). This does not change the unextracted status of the actual archived paper.
+
 Successful text extraction means bounded page text was obtained. Equations, figure interpretation, table fidelity, OCR, venue verification and scientific claim assessment still require separate work. This paper is from 2021; the retrieval is an engineering qualification, not a claim to have discovered the latest research.
 
 ## Preserved boundaries
