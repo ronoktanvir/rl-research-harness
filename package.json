@@ -12,6 +12,7 @@
     "test": "node --import tsx --test test/**/*.test.ts",
     "test:conventional": "python3 -I -B -m unittest discover -s test/conventional -p '*test.py' -v && node --import tsx --test test/conventional/*.test.ts",
     "test:investigation": "python3 -I -B -m unittest discover -s test/integrations -p '*investigation*test.py' -v && node --import tsx --test test/integrations/coworker-investigation*.test.ts",
+    "test:calibration": "python3 -I -B -m unittest discover -s test/integrations -p '*credit_probe_test.py' -v && node --import tsx --test test/integrations/coworker-credit-*.test.ts",
     "harness": "node --import tsx src/cli.ts"
   },
   "dependencies": {

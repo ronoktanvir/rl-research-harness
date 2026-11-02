@@ -48,6 +48,8 @@ The [historical evidence follow-up](docs/research/historical-evidence-followup.m
 
 The [protocol recovery](docs/research/run1-protocol-recovery.md) traces that historical evaluation through its archived scorer, scripted-helper routing, separate judge stage and saved settings. It distinguishes Run-1 from the current v2 environment and specifies the next semantic tests. This is manually reviewed research evidence, not an automated protocol investigator or a new scientific approval.
 
+The [native credit calibration](docs/credit-calibration.md) executes only reviewed extraction sources against bounded synthetic fixtures, preserving unknown labels and per-fact errors. `credit-calibrate` writes a new local evidence bundle. [Actual qualification](docs/research/credit-calibration-qualification.md) reproduced 49 existing v2 cases and found a new false positive; extraction agreement does not establish acquisition or whole-task success.
+
 ## Use existing subscriptions
 
 ```sh

@@ -15,6 +15,7 @@ import { QUEUE_USAGE, queueCommand } from "./scheduler/commands.ts";
 import { readBoundedJson } from "./scheduler/config.ts";
 import { runConventionalToArtifacts } from "./integrations/conventional/artifacts.ts";
 import { PUBLISHER_USAGE, publisherCommand } from "./literature/commands.ts";
+import { runCreditCalibrationToArtifacts } from "./integrations/coworker/credit-artifacts.ts";
 
 const USAGE = `RL research harness
 
@@ -37,6 +38,9 @@ Subscription-backed review (uses the selected official client's allowance):
 
 Explicit bounded local RL engineering experiment (CPU, no model calls):
   npm run harness -- conventional-run <request.json> <absolute-python-executable> <new-output-directory>
+
+Pinned native scorer qualification (synthetic cases, no model calls or training):
+  npm run harness -- credit-calibrate <request.json> <absolute-python-executable> <new-output-directory>
 
 review performs independent methods, systems and adversarial reviews and up to two
 proposal revisions. It saves JSON/Markdown decisions; it cannot launch training.
@@ -76,6 +80,16 @@ export async function main(args: string[]): Promise<number> {
   if (publisher !== null) return publisher;
   const queued = await queueCommand(args);
   if (queued !== null) return queued;
+  if (command === "credit-calibrate" && rest.length === 3) {
+    const abort = new AbortController(), stop = () => abort.abort();
+    process.once("SIGINT", stop); process.once("SIGTERM", stop);
+    try {
+      const result = await runCreditCalibrationToArtifacts(await readBoundedJson(rest[0]!, 262_144),
+        { pythonExecutable: rest[1]!, signal: abort.signal }, rest[2]!);
+      print(result);
+      return result.status !== "completed" || result.conclusion === "unassessed" ? 2 : result.conclusion === "counterexamples_found" ? 3 : 0;
+    } finally { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); }
+  }
   if (command === "conventional-run" && rest.length === 3) {
     const abort = new AbortController(), stop = () => abort.abort();
     process.once("SIGINT", stop); process.once("SIGTERM", stop);

@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "kind": "coworker-credit-calibration",
+  "rubric": {
+    "id": "coworker-affirmative-fact-credit",
+    "version": 1,
+    "author": "research-validity agent; fixture labels prepared separately from native probe execution",
+    "scope": "synthetic_extraction",
+    "description": "Credit requires an affirmative, uncontradicted assertion of the supplied fact's metric, signed quantity and unit, allowing exact unit conversion. A question, hypothetical, denied claim, unresolved contradiction or comparison bound alone earns no credit. Unknown preserves an interpretation that the available text cannot resolve. These labels do not assess acquisition, source attribution, helper behavior, reasoning quality or task usefulness."
+  },
+  "cases": [
+    {
+      "id": "credit-money-pair-correct",
+      "category": "metric_binding",
+      "text": "Free cash flow is $17.25M and net debt is $46.00M.",
+      "facts": [
+        {"id": "fcf", "value": "$17.25M", "unit": "money", "aliases": ["free cash flow", "FCF"], "expected": true, "rationale": "The sentence assigns the correct positive amount to free cash flow."},
+        {"id": "debt", "value": "$46.00M", "unit": "money", "aliases": ["net debt"], "expected": true, "rationale": "The sentence assigns the correct positive amount to net debt."}
+      ]
+    },
+    {
+      "id": "credit-money-pair-swapped",
+      "category": "metric_binding",
+      "text": "Free cash flow is $46.00M and net debt is $17.25M.",
+      "facts": [
+        {"id": "fcf", "value": "$17.25M", "unit": "money", "aliases": ["free cash flow", "FCF"], "expected": false, "rationale": "The correct free-cash-flow amount appears, but the sentence assigns it to net debt. Co-occurrence is insufficient."},
+        {"id": "debt", "value": "$46.00M", "unit": "money", "aliases": ["net debt"], "expected": false, "rationale": "The correct net-debt amount appears, but the sentence assigns it to free cash flow."}
+      ]
+    },
+    {
+      "id": "credit-positive-target-negative-claim",
+      "category": "sign",
+      "text": "Free cash flow is -$17.25M.",
+      "facts": [
+        {"id": "fcf", "value": "$17.25M", "unit": "money", "aliases": ["free cash flow", "FCF"], "expected": false, "rationale": "A negative amount contradicts the supplied positive amount; matching digits do not preserve sign."}
+      ]
+    },
+    {
+      "id": "credit-negative-target-negative-claim",
+      "category": "sign",
+      "text": "Revenue impact is -$17.25M.",
+      "facts": [
+        {"id": "impact", "value": "-$17.25M", "unit": "money", "aliases": ["revenue impact"], "expected": true, "rationale": "The asserted metric, negative sign, amount and money unit agree with the supplied fact."}
+      ]
+    },
+    {
+      "id": "credit-exact-dollar-conversion",
+      "category": "unit_scale",
+      "text": "Free cash flow is $17,250,000.",
+      "facts": [
+        {"id": "fcf", "value": "$17.25M", "unit": "money", "aliases": ["free cash flow", "FCF"], "expected": true, "rationale": "Seventeen million two hundred fifty thousand dollars equals $17.25 million exactly; this does not rely on rounding."}
+      ]
+    },
+    {
+      "id": "credit-missing-million-scale",
+      "category": "unit_scale",
+      "text": "Free cash flow is $17.25.",
+      "facts": [
+        {"id": "fcf", "value": "$17.25M", "unit": "money", "aliases": ["free cash flow", "FCF"], "expected": false, "rationale": "The asserted dollar amount is one million times smaller than the supplied fact."}
+      ]
+    },
+    {
+      "id": "credit-ratio-asserted",
+      "category": "assertion_status",
+      "text": "Interest coverage is 1.40x.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": true, "rationale": "The text directly asserts the supplied ratio for its named metric."}
+      ]
+    },
+    {
+      "id": "credit-ratio-hypothetical",
+      "category": "assertion_status",
+      "text": "If interest coverage were 1.40x, we would revise the forecast.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": false, "rationale": "The ratio is introduced as a hypothetical condition, not asserted as the actual metric value."}
+      ]
+    },
+    {
+      "id": "credit-ratio-question",
+      "category": "assertion_status",
+      "text": "Is interest coverage 1.40x?",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": false, "rationale": "A request to confirm the ratio does not affirm its value."}
+      ]
+    },
+    {
+      "id": "credit-ratio-contradiction",
+      "category": "contradiction",
+      "text": "Interest coverage is 1.40x. Interest coverage is 2.80x.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": false, "rationale": "The text asserts two incompatible values for the same metric without a correction or different scope; one matching assertion does not resolve the contradiction."}
+      ]
+    },
+    {
+      "id": "credit-ratio-negated",
+      "category": "assertion_status",
+      "text": "Interest coverage is not 1.40x.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": false, "rationale": "The sentence explicitly denies the supplied value."}
+      ]
+    },
+    {
+      "id": "credit-ratio-rejected-alternative",
+      "category": "negation_scope",
+      "text": "Interest coverage is 1.40x, not 2.80x.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": true, "rationale": "The sentence affirms the supplied value and rejects a different value; the negation does not apply to 1.40x."}
+      ]
+    },
+    {
+      "id": "credit-ratio-comparison-bound",
+      "category": "assertion_status",
+      "text": "Interest coverage exceeds 1.40x.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": false, "rationale": "A strict lower bound does not assert equality to the supplied ratio and is incompatible with that exact value."}
+      ]
+    },
+    {
+      "id": "credit-denied-quotation",
+      "category": "reported_claim",
+      "text": "The draft states that interest coverage is 1.40x. That statement is false.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": false, "rationale": "The writer reports another text's assertion and then explicitly rejects it; the memo does not endorse the supplied ratio."}
+      ]
+    },
+    {
+      "id": "credit-other-metric-value",
+      "category": "metric_binding",
+      "text": "Interest coverage remains unmeasured; leverage is 1.40x.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": false, "rationale": "The value is assigned to leverage while the target metric is explicitly unmeasured."}
+      ]
+    },
+    {
+      "id": "credit-ambiguous-referent",
+      "category": "underspecified_context",
+      "text": "Interest coverage and leverage were discussed. It is 1.40x.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": "unknown", "rationale": "The pronoun could refer to either named ratio. The text does not determine whether the supplied metric receives the value, so this annotation is excluded from scored agreement."}
+      ]
+    },
+    {
+      "id": "credit-correct-number-unsupported-conclusion",
+      "category": "scope_control",
+      "text": "Interest coverage is 1.40x. Therefore creditors face no risk.",
+      "facts": [
+        {"id": "coverage", "value": "1.40x", "unit": "ratio", "aliases": ["interest coverage"], "expected": true, "rationale": "The supplied metric and value are correctly asserted. The unsupported risk conclusion is outside this extraction label and prevents interpreting credit as valid reasoning or task success."}
+      ]
+    }
+  ]
+}
