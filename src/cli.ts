@@ -16,6 +16,7 @@ import { readBoundedJson } from "./scheduler/config.ts";
 import { runConventionalToArtifacts } from "./integrations/conventional/artifacts.ts";
 import { PUBLISHER_USAGE, publisherCommand } from "./literature/commands.ts";
 import { runCreditCalibrationToArtifacts } from "./integrations/coworker/credit-artifacts.ts";
+import { loadObservedReplayArtifacts, readObservedReplayJson, recoverObservedReplayArtifacts, runObservedReplayToArtifacts } from "./integrations/coworker/observed-replay-artifacts.ts";
 
 const USAGE = `RL research harness
 
@@ -41,6 +42,11 @@ Explicit bounded local RL engineering experiment (CPU, no model calls):
 
 Pinned native scorer qualification (synthetic cases, no model calls or training):
   npm run harness -- credit-calibrate <request.json> <absolute-python-executable> <new-output-directory>
+
+Pinned native CoworkerRL replay (saved artifacts, no model calls or training):
+  npm run harness -- observed-replay <request.json> <absolute-python-executable> <new-output-directory>
+  npm run harness -- observed-replay-read <output-directory>
+  npm run harness -- observed-replay-recover <output-directory>
 
 review performs independent methods, systems and adversarial reviews and up to two
 proposal revisions. It saves JSON/Markdown decisions; it cannot launch training.
@@ -80,6 +86,19 @@ export async function main(args: string[]): Promise<number> {
   if (publisher !== null) return publisher;
   const queued = await queueCommand(args);
   if (queued !== null) return queued;
+  if ((command === "observed-replay-read" || command === "observed-replay-recover") && rest.length === 1) {
+    const saved = await (command === "observed-replay-read" ? loadObservedReplayArtifacts : recoverObservedReplayArtifacts)(rest[0]!);
+    print(saved.summary); return saved.summary.status === "completed" ? 0 : 2;
+  }
+  if (command === "observed-replay" && rest.length === 3) {
+    const abort = new AbortController(), stop = () => abort.abort();
+    process.once("SIGINT", stop); process.once("SIGTERM", stop);
+    try {
+      const result = await runObservedReplayToArtifacts(await readObservedReplayJson(rest[0]!),
+        { pythonExecutable: rest[1]!, signal: abort.signal }, rest[2]!);
+      print(result); return result.status === "completed" ? 0 : 2;
+    } finally { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); }
+  }
   if (command === "credit-calibrate" && rest.length === 3) {
     const abort = new AbortController(), stop = () => abort.abort();
     process.once("SIGINT", stop); process.once("SIGTERM", stop);

@@ -1,6 +1,6 @@
 # Decision 0003: reuse native v2 observed replay
 
-Date: 2026-11-02. Status: selected adapter design; local mechanical qualification passed; production harness adapter pending.
+Date: 2026-11-02. Status: selected design implemented as a bounded local adapter; native and artifact-lifecycle qualification passed. Research-ledger integration and deployment remain pending.
 
 ## Decision and reason
 
@@ -22,7 +22,7 @@ Pin the executable source/data package and wrapper before launch; resolve a real
 
 Retain the complete required-fact universe, private world inputs, original identities and per-message read/inference witnesses. Extraction must use the replayed memo and the instantiated fact aliases, with exact digest binding. Missing or rejected evidence remains unassessed; repeated reads cannot multiply a fact's numerator. Keep source custody, numeric agreement, semantic correctness and experiment quality separate.
 
-The one-off qualification launcher is not the production adapter. Runtime/import/output bounds, persistent intent/results, receipt reload and queue integration still need implementation and review. Task-package-only configurations need an explicit manifest/revision/interpretation-notes profile beyond the first catalog profile.
+The one-off qualification launcher remains distinct from the subsequent [local adapter](../observed-replay.md), whose runtime/import/output bounds, persistent intent/results and offline receipt reload now have [qualification evidence](../research/observed-replay-adapter-qualification.md). Queue/ledger integration is still pending. Task-package-only configurations need an explicit manifest/revision/interpretation-notes profile beyond the first catalog profile.
 
 ## Reversal conditions
 

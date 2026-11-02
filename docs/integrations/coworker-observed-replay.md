@@ -2,7 +2,7 @@
 
 **Call the existing v2 `build_observed_replay` with its production validators, then join native extraction observations to separately declared labels.** Reimplementing its event logic would discard a tested contract. Its replay reconstructs memory pages, maps positions to original message IDs and requires a later policy inference to contain the observation. This is stronger than the legacy Run-1 same-channel value-arrival proxy.
 
-Status: selected adapter design; [local native qualification](../research/observed-replay-qualification.md) passed 58 existing tests and two harness extensions on 2026-11-02. CoworkeRL HEAD is `84b219f64f1152f8b02babea388bfbbfff41e75a`; the inspected source remained unchanged. Initial inspection was read-only; subsequent qualification executed its staged source with fake provider transports. The production harness adapter remains unimplemented.
+Status: the [local adapter](../observed-replay.md) is implemented and [qualified](../research/observed-replay-adapter-qualification.md); queue/ledger integration and unattended deployment remain pending. Earlier [native qualification](../research/observed-replay-qualification.md) passed 58 existing tests and two harness extensions on 2026-11-02. CoworkeRL HEAD is `84b219f64f1152f8b02babea388bfbbfff41e75a`; the inspected source remained unchanged. Initial inspection was read-only; subsequent qualification executed its staged source with fake provider transports.
 
 ## Native contract
 
@@ -18,7 +18,7 @@ The returned `ObservedReplay` contains `brief`, `world_facts`, `evidence`, `memo
 
 ## Minimal adapter request
 
-Start with one bounded persisted pair under an operator-configured artifact root. Queue requests contain relative references, not import paths, executables or caller-built episodes:
+The implemented local command accepts one bounded persisted pair under an operator-selected artifact root. Its operator request includes explicit source/artifact roots; future queue integration must obtain that authority from trusted project configuration. Queue requests should contain relative references, not import paths, executables or caller-built episodes:
 
 - Stable project/investigation identity and expected source-closure manifest digest.
 - Episode selection `{registry: "pinned_catalog", configId, seed}`. Resolve the native config and call its actual `instantiate` inside the pinned package.
@@ -36,7 +36,7 @@ Pinning only `completion_bridge.py` is insufficient. Direct imports include `com
 
 Keep the complete replay private and bounded. Ledger projections should retain its hash, exact input identities, world fingerprint, terminal status, required-fact universe, source bindings, evidence message/source/fact IDs, content hashes and page/next-inference witnesses.
 
-Native extraction must receive exactly `ObservedReplay.memo` and the corresponding episode fact definitions. `ObservedReplay.world_facts` omits aliases: obtain them from the same instantiated episode fact, verifying ID/value/unit/source ownership. Do not infer aliases from labels or accept annotation-supplied replacements. The existing credit probe's `probeInputDigest` must bind this exact packet.
+Native extraction must receive exactly `ObservedReplay.memo` and the corresponding episode fact definitions. `ObservedReplay.world_facts` omits aliases: obtain them from the same instantiated episode fact, verifying ID/value/unit/source ownership. Do not infer aliases from labels or accept annotation-supplied replacements. The implemented adapter executes extraction in that same pinned worker and binds its result to the request, exact memo and complete fact-definition digests. A separate credit-probe call would need to bind this exact packet through its `probeInputDigest`.
 
 Each planned required fact needs distinct observed-evidence status, native credit Boolean or scorer error, expected semantic label or `unknown`, rubric identity, terminal status and stage errors. Repeated disclosures must not multiply its numerator. Failed replay and missing results remain unresolved, not negative policy outcomes. Derive `observed && credited` only with complete applicable evidence, and label it a producer predicate, not semantic correctness or task success.
 
@@ -78,4 +78,4 @@ Paths are relative to `/Users/ronoktanvir/CoworkeRL/experiments/coworkerl-v2`. T
 | `tests/test_package_binding_failclosed.py` | `00d0733f32eb65f1dc5af36b065ab8ee8e9159414615554c8b0c5d1b7f7ec70a` |
 | `tests/test_staged_completion_integration.py` | `237a03a11d70965cf864f6e5b50ffea85cc9ad2dfa0d6bbb09559eba3991db06` |
 
-The pinned staged-package qualification is complete, with raw fixture pairs, summaries and an independently verified inventory retained locally. The next step is the catalog-backed adapter with bounded execution, persistent receipts and offline reload. Current-v2 success must not be presented as retrospective Run-1 validation.
+The pinned staged-package and local adapter qualifications are complete, with raw fixture pairs, complete observation projections and independently verified local receipts. The next step is research-ledger integration and separately bound semantic assessment. Current-v2 success must not be presented as retrospective Run-1 validation.

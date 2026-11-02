@@ -50,7 +50,7 @@ The [protocol recovery](docs/research/run1-protocol-recovery.md) traces that his
 
 The [native credit calibration](docs/credit-calibration.md) executes only reviewed extraction sources against bounded synthetic fixtures, preserving unknown labels and per-fact errors. `credit-calibrate` writes a new local evidence bundle. [Actual qualification](docs/research/credit-calibration-qualification.md) reproduced 49 existing v2 cases and found a new false positive; extraction agreement does not establish acquisition or whole-task success.
 
-The [native observed-replay qualification](docs/research/observed-replay-qualification.md) passes 58 upstream tests and two combined counterexamples using actual v2 capture/replay with fake provider transports. It distinguishes authorized observation from text credit and semantic correctness. The [selected adapter design](docs/integrations/coworker-observed-replay.md) reuses that native path; its production harness integration remains pending.
+The [observed-replay adapter](docs/observed-replay.md) now executes that pinned native path for a selected saved episode, preserves all world/required facts and read witnesses, and reloads local evidence without the original inputs. [Actual adapter qualification](docs/research/observed-replay-adapter-qualification.md) preserves both counterexamples from the earlier 60-test native fixture and verifies failure/recovery behavior. Research-ledger integration and semantic assessment remain pending.
 
 ## Use existing subscriptions
 
