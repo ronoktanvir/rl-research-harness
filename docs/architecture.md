@@ -1,6 +1,6 @@
 # Proposed architecture
 
-Status: design, not implemented or deployment-tested. Read `reuse-plan.md` for the source-backed component choices and their limits.
+Status: target architecture; the [implementation status](implementation-status.md) distinguishes implemented components from remaining requirements. Deployment is not qualified. Read `reuse-plan.md` for the source-backed component choices and their limits.
 
 ## Recommendation
 

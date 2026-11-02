@@ -12,11 +12,11 @@ The user explicitly selected **both conventional RL environments/policy training
 
 The task includes the assessment, implementation, a private repository, thoughtful commits and independent code review. The user selected **CoworkerRL** at `/Users/ronoktanvir/CoworkeRL` as the first integration and asked to use existing ChatGPT/Claude allowances. Building the harness does not start a full training campaign.
 
-Status: assessment complete; `ronoktanvir/rl-research-harness` created and verified private. Initial code provides a Pi runtime adapter, structured council, subscription-backed CLI reviewers and read-only CoworkerRL inspection. Offline tests and one-message live Codex/Claude checks pass. Independent reviews found and corrected validation, mutation, process-cleanup and file-traversal defects. See `docs/implementation-status.md` for exact gaps. No cloud resource or CoworkerRL training run has been launched.
+Status: assessment complete; `ronoktanvir/rl-research-harness` created and verified private. Code provides a Pi runtime adapter, structured council, subscription-backed CLI reviewers, an authoritative local experiment ledger, an injected-backend dispatch coordinator, persistent CoworkerRL captures and ledger-derived Markdown/JSON project snapshots. Independent reviews corrected recovery, accounting, authority, validation, mutation and file-traversal defects. See `docs/implementation-status.md` for exact gaps. No cloud resource or CoworkerRL training run has been launched.
 
 Recommendation: own the research controller, support official subscription-backed workers and retain pinned Pi as an optional runtime. Adapt selected Ouroboros contracts; keep conventional RL and LLM adapters separate. Design requirements remain unimplemented wherever acceptance evidence is missing.
 
-The reviewed foundation is published through commit `33c77ebb42bec8f5fca7dcac51295b892597eff3`; all 72 offline tests pass locally and Linux CI passed with Node 24 and 25. Next action: build the authoritative experiment ledger, persistent queue, admission/stop policy and CoworkerRL observation records. Read the full requirements audit before claiming completion. Training/deployment limits can be selected later; local implementation need not wait.
+The published code at `b565c852e8f5bbacb643f4b43a4cb375c86d732f` passes 128 local offline tests and Linux CI on Node 24 and 25. The ledger slice adds real process-kill/rollback tests, explicit unknown outcomes, conservative unsettled-exposure holds, narrow cleanup while stopped, and historical-report capture. A local observation is stored under capture ID `historical-main-s11` in ignored `.harness/coworker.sqlite`; it has no registered run or executable manifest. Next action: persistent research-task scheduling and worker/broker integration, followed by real adapter qualification. Read the full requirements audit before claiming completion. Training/deployment limits can be selected later; local implementation need not wait.
 
 ## Working assumptions
 
@@ -41,7 +41,8 @@ CoworkerRL is selected, but its first campaign, available GPUs/provider, compute
 - `docs/repo-audits/`: inspected code and limitations.
 - `docs/research/evidence-and-standards.md`: research evidence and source status.
 - `docs/decisions/0001-runtime.md`: provisional runtime choice and reversal criteria.
-- `docs/ledger-implementation-brief.md`: next implementation contract and failure tests; still a proposal.
+- `docs/ledger-implementation.md`, `docs/controller-dispatch.md`: implemented local authority/recovery and remaining external guarantees.
+- `docs/project-state.md`, `docs/integrations/coworker-capture.md`: operational context export and historical evidence capture.
 
 ## Continuity rules
 

@@ -2,7 +2,7 @@
 
 The implemented ledger makes experiment identity, admission, dispatch uncertainty, stop authority and recorded spending persistent under one trusted local controller. It does **not** launch training, authenticate remote workers, verify invoices, or enforce provider spending limits. The [architecture](architecture.md) remains the broader target; this document describes the narrower code in [`src/ledger`](../src/ledger/index.ts).
 
-Qualification date: 2026-11-01, America/Los_Angeles. Local verification uses Node 25.9.0 and built-in `node:sqlite`. The package target remains Node >=24.12.0 <26. These tests establish process-crash behavior on the tested local filesystem, not power-loss durability or distributed failover.
+Qualification date: 2026-11-01, America/Los_Angeles. Local verification uses Node 25.9.0 and built-in `node:sqlite`; [Linux CI](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41382669902) also passed with Node 24 and 25. The package target remains Node >=24.12.0 <26. These tests establish process-crash behavior on the tested filesystems, not power-loss durability or distributed failover.
 
 ## Ownership and persistence
 

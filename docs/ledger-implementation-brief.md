@@ -1,6 +1,6 @@
 # Next slice: authoritative experiment ledger
 
-Status: implementation brief, not implemented. Prepared after independent review of the foundation on 2026-11-01. The [architecture](architecture.md) and [full status](implementation-status.md) remain the scope references.
+Status: original implementation brief, retained as acceptance criteria. The local ledger and injected dispatcher are now implemented; [ledger qualification](ledger-implementation.md) and [dispatch qualification](controller-dispatch.md) record the actual boundaries. The [architecture](architecture.md) and [full status](implementation-status.md) remain the scope references.
 
 Use one controller-owned SQLite ledger with transactional admission and a durable outbox. Keep it separate from Pi's database. The first slice qualifies local identity and recovery with injected workers; it must not enable production training dispatch.
 
