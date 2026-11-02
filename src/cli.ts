@@ -14,6 +14,7 @@ import type { CliBackend } from "./workers/cli.ts";
 import { QUEUE_USAGE, queueCommand } from "./scheduler/commands.ts";
 import { readBoundedJson } from "./scheduler/config.ts";
 import { runConventionalToArtifacts } from "./integrations/conventional/artifacts.ts";
+import { PUBLISHER_USAGE, publisherCommand } from "./literature/commands.ts";
 
 const USAGE = `RL research harness
 
@@ -50,6 +51,8 @@ Ledger commands take exclusive local ownership and recover abandoned dispatches 
 unknown. They cannot attach to a running controller or confirm remote cancellation.
 
 ${QUEUE_USAGE}
+
+${PUBLISHER_USAGE}
 `;
 
 function print(value: unknown): void {
@@ -69,6 +72,8 @@ function backend(value: string | undefined): CliBackend {
 export async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
   if (!command || command === "--help" || command === "help") { console.log(USAGE); return 0; }
+  const publisher = await publisherCommand(args);
+  if (publisher !== null) return publisher;
   const queued = await queueCommand(args);
   if (queued !== null) return queued;
   if (command === "conventional-run" && rest.length === 3) {
