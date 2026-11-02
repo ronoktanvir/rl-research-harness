@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { openJobJournal } from "../../src/execution/journal.ts";
 import { createSystemdTransport } from "../../src/execution/systemd.ts";
 import { createJobDeclaration, createSupervisedWorker } from "../../src/execution/worker.ts";
+import { PACKAGED_DEADLINE_GATE_PATH } from "../../src/execution/deadline-gate.ts";
 import { runProcess } from "../../src/workers/process.ts";
 import type { HostIdentity, JobDeclaration, ServiceLimits, ServiceQueryResult, ServiceSnapshot,
   SystemdTransport } from "../../src/execution/types.ts";
@@ -142,37 +143,47 @@ async function snapshot(fixture: Fixture, predicate: (value: ServiceSnapshot) =>
 }
 
 async function withFixture(t: TestContext, host: HostIdentity, mode: string,
-  body: (fixture: Fixture) => Promise<void>, overrides: Partial<ServiceLimits> = {}): Promise<void> {
+  body: (fixture: Fixture) => Promise<void>, overrides: Partial<ServiceLimits> = {}, timing: { delayStartMs?: number; deadlineMs?: number } = {}): Promise<void> {
   // The checkout is under /home on GitHub runners; ProtectHome=yes intentionally
   // hides it. Stage only this fixed source in a separate read-only /tmp root.
   const sourceDirectory = await mkdtemp("/tmp/rlh-systemd-source-");
+  const gateDirectory = await mkdtemp("/tmp/rlh-systemd-gate-");
   const directory = await mkdtemp("/tmp/rlh-systemd-fixture-");
   const controllerDirectory = await mkdtemp("/tmp/rlh-systemd-controller-");
   const marker = join(directory, "events.jsonl");
   let unitName: string | undefined;
   const commandResults: Array<{ operation: string; exitCode: number | null; stopped: string | null; stderr: string; stdout: string }> = [];
   try {
-    const source = join(sourceDirectory, "service-child.cjs");
-    await copyFile(fixtureSource, source); await chmod(source, 0o644);
-    const executable = await realpath(process.execPath);
+    const source = join(sourceDirectory, mode === "extend" ? "deadline-child.py" : "service-child.cjs");
+    await copyFile(mode === "extend" ? fileURLToPath(new URL("./fixtures/deadline-child.py", import.meta.url)) : fixtureSource, source);
+    await chmod(source, 0o644);
+    const gateScript = join(gateDirectory, "deadline-gate.py");
+    await copyFile(PACKAGED_DEADLINE_GATE_PATH, gateScript); await chmod(gateScript, 0o644);
+    const executable = await realpath(mode === "extend" ? "/usr/bin/python3" : process.execPath);
     const transport = createSystemdTransport({ execute: async request => {
+      if (request.args.includes("/usr/bin/systemd-run") && timing.delayStartMs) {
+        // Deliberate delay after native preflight simulates delivery/queue delay.
+        // The real gate must recheck its anchored deadline before the target runs.
+        await new Promise(resolve => setTimeout(resolve, timing.delayStartMs));
+      }
       const result = await runProcess(request);
       const operation = request.args.includes("/usr/bin/systemd-run") ? "start" : request.args.includes("stop") ? "stop" : "query";
       commandResults.push({ operation, exitCode: result.exitCode, stopped: result.stopped,
         stderr: diagnosticText(result.stderr), stdout: diagnosticText(result.stdout, 1_024) });
       // Preserve the first start and a few recent results. This wrapper changes
       // no request, return value, timeout or cancellation signal.
-      if (commandResults.length > 5) commandResults.splice(1, 1);
+      if (commandResults.length > 5) commandResults.splice(commandResults[0]?.operation === "start" ? 1 : 0, 1);
       return result;
     }, profile: {
       userId: process.getuid!(), groupId: process.getgid!(), executables: [executable],
-      readOnlyPaths: [sourceDirectory], writableRoot: directory, allowedEnvironment: [], maxima: limits, useSudo: true,
+      readOnlyPaths: [sourceDirectory, gateDirectory], writableRoot: directory, allowedEnvironment: [], maxima: limits, useSudo: true,
+      deadlineGate: { pythonExecutable: "/usr/bin/python3", scriptPath: gateScript, safetyMarginMs: 1000, barrierTimeoutMs: 1000 },
     } });
     const key = randomUUID(), digest = (label: string) => createHash("sha256").update(`${key}:${label}`).digest("hex");
     const declaration = createJobDeclaration({ actionId: `fixture-action-${key}`, backendKey: `fixture-key-${key}`,
       manifestDigest: digest("manifest"), planDigest: digest("plan"), workerId: "linux-ci-fixture",
       command: { executable, args: [source, mode, marker, literalArgument], cwd: sourceDirectory, environment: {} },
-      limits: { ...limits, ...overrides }, deadlineAt: new Date(Date.now() + 30_000).toISOString(), host });
+      limits: { ...limits, ...overrides }, deadlineAt: new Date(Date.now() + (timing.deadlineMs ?? 30_000)).toISOString(), host });
     unitName = declaration.request.identity.unitName;
     assert.deepEqual(await transport.hostIdentity(), host, "Native bounded host-identity reading must match the CI host");
     await body({ directory, marker, journalPath: join(controllerDirectory, "jobs.sqlite"), transport, declaration,
@@ -192,7 +203,7 @@ async function withFixture(t: TestContext, host: HostIdentity, mode: string,
       try { await ctl(["reset-failed", "--", unitName]); }
       catch (error) { if (errorCode(error) !== 1 && errorCode(error) !== 5) throw error; }
     }
-    await Promise.all([sourceDirectory, directory, controllerDirectory].map(path => rm(path, { recursive: true, force: true })));
+    await Promise.all([sourceDirectory, gateDirectory, directory, controllerDirectory].map(path => rm(path, { recursive: true, force: true })));
     t.diagnostic("Only the owned fixture unit and temporary files were cleaned up.");
   }
 }
@@ -319,5 +330,37 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
         assert.equal((await fixture.events()).filter(event => event.event === "started").length, 1);
       } finally { journal.close(); }
     });
+  });
+
+  await t.test("late delivery is refused by the real gate before any fixture execution", { timeout: 15_000 }, async t => {
+    await withFixture(t, host, "success", async fixture => {
+      const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(8_000), () => true);
+      assert.equal(start.kind, "unknown", "Refused gate readiness cannot become successful trainer acceptance");
+      const ended = await snapshot(fixture, value => value.activeState === "failed");
+      assertCleanupEvidence(ended, fixture);
+      assert.equal(ended.execMainCode, 1); assert.equal(ended.execMainStatus, 78);
+      assert.deepEqual(await fixture.events(), [], "Target must not run after the anchored eligibility window closes");
+      assert.match(await fixtureStatus(fixture.declaration.request.identity.unitName), /deadline-gate:deadline_insufficient/u);
+    }, { runtimeMs: 2_000, stopTimeoutMs: 500 }, { delayStartMs: 4_000, deadlineMs: 7_000 });
+  });
+
+  await t.test("the main process cannot extend the runtime after gate readiness", { timeout: 15_000 }, async t => {
+    await withFixture(t, host, "extend", async fixture => {
+      const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true);
+      assert.equal(start.kind, "accepted", `Start outcome: ${JSON.stringify(start)}`);
+      const setting = await executeFile("/usr/bin/sudo", ["-n", "--", "/usr/bin/systemctl", "--system", "--no-pager", "--no-ask-password",
+        "show", "--property=NotifyAccess", "--value", "--", fixture.declaration.request.identity.unitName],
+      { timeout: 2_000, maxBuffer: 1024, encoding: "utf8" });
+      assert.equal(setting.stdout.trim(), "none", "Manager must apply the gate's notification revocation");
+      const ended = await snapshot(fixture, value => value.activeState === "failed");
+      assertCleanupEvidence(ended, fixture); assert.equal(ended.result, "timeout");
+      const rows = await fixture.events(), starts = rows.filter(row => row.event === "started");
+      assert.equal(starts.length, 1);
+      const attempts = rows.filter(row => row.event === "notify_attempt");
+      assert.ok(attempts.length >= 2, "Actual main process must attempt extensions before expiry");
+      assert.ok(attempts.every(row => row.pid === starts[0]!.pid), "A helper's ignored notification would not test the main PID's access");
+      assert.ok(rows.some(row => row.event === "ignored_sigterm"));
+      await assertEnded(fixture, starts);
+    }, { runtimeMs: 2_000, stopTimeoutMs: 500 });
   });
 });

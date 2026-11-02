@@ -26,8 +26,12 @@ test("native cgroup mount verification rejects partial, masked, foreign and ambi
 });
 
 function profile(): SystemdProfile {
-  return { userId: 1001, groupId: 1001, executables: ["/usr/bin/node"], readOnlyPaths: ["/opt/fixture"], writableRoot: "/srv/fixture",
+  return { userId: 1001, groupId: 1001, executables: ["/usr/bin/node"], readOnlyPaths: ["/opt/fixture", "/opt/harness"], writableRoot: "/srv/fixture",
+    deadlineGate: { pythonExecutable: "/usr/bin/python3", scriptPath: "/opt/harness/deadline-gate.py", safetyMarginMs: 1000, barrierTimeoutMs: 1000 },
     allowedEnvironment: ["PATH", "FIXTURE"], useSudo: false, maxima: { runtimeMs: 60_000, startTimeoutMs: 5000, stopTimeoutMs: 2000, memoryMaxBytes: 536_870_912, tasksMax: 64 } };
+}
+function gateRuntime() {
+  return { managerVersion: async () => 255, dispatchClock: async (bootId: string) => ({ bootId, utcMs: NOW.getTime(), bootTimeMs: 100_000 }) };
 }
 function request(): ServiceLaunchRequest {
   return { identity: { unitName: `rlh-${"c".repeat(64)}.service`, description: `rlh-v1:${"d".repeat(64)}` }, expectedHost: { ...HOST },
@@ -44,7 +48,7 @@ function show(overrides: Record<string, string> = {}): string {
 }
 function setup(responses: Array<ProcessResult | Error>, options: { profile?: SystemdProfile; hosts?: HostIdentity[]; cgroup?: boolean | null; cgroupState?: CgroupState } = {}) {
   const calls: ProcessRequest[] = [], cgroups: string[] = [], hosts = [...(options.hosts ?? [HOST])];
-  const transport = createSystemdTransport({ profile: options.profile ?? profile(), now: () => new Date(NOW),
+  const transport = createSystemdTransport({ ...gateRuntime(), profile: options.profile ?? profile(), now: () => new Date(NOW),
     hostIdentity: async () => structuredClone(hosts.length > 1 ? hosts.shift()! : hosts[0]!),
     ...(options.cgroupState ? { readCgroupState: async (path: string) => { cgroups.push(path); return options.cgroupState!; } }
       : { readCgroupPopulated: async (path: string) => { cgroups.push(path); return options.cgroup ?? null; } }),
@@ -56,18 +60,22 @@ test("start uses literal argv, fixed env clearing, bounded cgroup policy and no 
   const fixture = setup([ok()]), r = request();
   const result = await fixture.transport.start(r, signal(), () => true);
   assert.equal(result.kind, "accepted");
-  if (result.kind === "accepted") { assert.equal(result.evidence.acceptedScope, "environment_wrapper_start"); assert.equal(result.evidence.absoluteDeadlineEnforced, false); }
+  if (result.kind === "accepted") { assert.equal(result.evidence.acceptedScope, "deadline_gate_ready"); assert.equal(result.evidence.deadlineGateProtocol, "notify-v1"); assert.equal(result.evidence.absoluteDeadlineEnforced, false); }
   assert.equal(fixture.calls.length, 1);
   const call = fixture.calls[0]!;
   assert.equal(call.executable, "/usr/bin/systemd-run"); assert.equal(call.cwd, "/"); assert.equal(call.input, "");
   assert.equal(call.timeoutMs, 3000); assert.equal(call.maxOutputBytes, 32_768);
   assert.deepEqual(call.env, { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C", LC_ALL: "C", SYSTEMD_PAGER: "cat", SYSTEMD_COLORS: "0" });
-  for (const arg of ["--system", "--expand-environment=no", "--property=Type=exec", "--property=ExitType=cgroup", "--remain-after-exit", "--property=Restart=no", "--property=Slice=system.slice", "--uid=1001", "--gid=1001",
+  for (const arg of ["--system", "--expand-environment=no", "--property=Type=notify", "--property=NotifyAccess=main", "--property=RuntimeRandomizedExtraSec=0", "--property=ExitType=cgroup", "--remain-after-exit", "--property=Restart=no", "--property=Slice=system.slice", "--uid=1001", "--gid=1001",
     "--property=RuntimeMaxSec=12000ms", "--property=TimeoutStartSec=2000ms", "--property=TimeoutStopSec=1000ms", "--property=KillMode=control-group",
     "--property=SendSIGKILL=yes", "--property=Delegate=no", "--property=MemoryMax=268435456", "--property=TasksMax=16", "--property=NoNewPrivileges=yes",
-    "--property=ProtectSystem=strict", "--property=ReadOnlyPaths=/opt/fixture", "--property=ReadWritePaths=/srv/fixture"]) assert.ok(call.args.includes(arg), arg);
+    "--property=ProtectSystem=strict", "--property=ReadOnlyPaths=/opt/fixture /opt/harness", "--property=ReadWritePaths=/srv/fixture"]) assert.ok(call.args.includes(arg), arg);
   const end = call.args.indexOf("--");
-  assert.deepEqual(call.args.slice(end), ["--", "/usr/bin/env", "-i", "--", "FIXTURE=literal $HOME %n spaces=equal", "PATH=/usr/bin", r.command.executable, ...r.command.args]);
+  assert.deepEqual(call.args.slice(end, end + 8), ["--", "/usr/bin/env", "-i", "--", "/usr/bin/python3", "-I", "-S", "/opt/harness/deadline-gate.py"]);
+  const target = call.args.lastIndexOf("--");
+  assert.deepEqual(call.args.slice(target + 1), [r.command.executable, ...r.command.args]);
+  assert.deepEqual(JSON.parse(call.args[target - 1]!), r.command.environment);
+  assert.ok(!call.args.some(arg => arg.startsWith("FIXTURE=") || arg.startsWith("PATH=")), "Trainer environment must not affect the gate loader");
   assert.ok(!call.args.some(arg => /--(scope|shell|wait|collect|user)$/u.test(arg)));
   // Real systemd 255 rejects JobTimeoutUSec on transient creation. A running-job
   // timeout is not a substitute for a queue deadline, so neither is advertised.
@@ -85,6 +93,30 @@ test("control socket masks preserve systemd's required namespace setup paths", a
   }
 });
 
+test("the running manager's version must support notification access override before any start", async () => {
+  for (const version of ["253", "unrecognized", "255.4-1ubuntu8.18"]) {
+    const calls: ProcessRequest[] = [];
+    const transport = createSystemdTransport({ profile: profile(), now: () => new Date(NOW), hostIdentity: async () => HOST,
+      dispatchClock: gateRuntime().dispatchClock, execute: async request => {
+        calls.push(request); return request.args.includes("--property=Version") ? ok(`${version}\n`) : ok();
+      } });
+    const result = await transport.start(request(), signal(), () => true);
+    assert.equal(result.kind, version.startsWith("255") ? "accepted" : "unknown");
+    assert.equal(calls.filter(call => call.executable === "/usr/bin/systemd-run").length, version.startsWith("255") ? 1 : 0);
+    assert.ok(calls[0]!.args.includes("--property=Version"));
+    assert.ok(!calls[0]!.args.includes("--version"), "Client version cannot establish the running manager's capability");
+  }
+});
+
+test("revocation during dispatch-clock sampling still prevents the native start", async () => {
+  let authorized = true, starts = 0;
+  const transport = createSystemdTransport({ ...gateRuntime(), profile: profile(), now: () => new Date(NOW), hostIdentity: async () => HOST,
+    dispatchClock: async bootId => { authorized = false; return gateRuntime().dispatchClock(bootId); },
+    execute: async () => { starts++; return ok(); } });
+  assert.deepEqual(await transport.start(request(), signal(), () => authorized), { kind: "unknown", reason: "authority_revoked_before_submit" });
+  assert.equal(starts, 0);
+});
+
 test("sudo is a fixed noninteractive prefix and never changes the trainer to root", async () => {
   const p = profile(); p.useSudo = true;
   const fixture = setup([ok(), ok(show())], { profile: p });
@@ -99,7 +131,7 @@ test("profile and request are snapshotted before the first asynchronous host loo
   const p = profile(), r = request(), calls: ProcessRequest[] = [];
   let resolve!: (value: HostIdentity) => void;
   let first = true;
-  const transport = createSystemdTransport({ profile: p, now: () => new Date(NOW),
+  const transport = createSystemdTransport({ ...gateRuntime(), profile: p, now: () => new Date(NOW),
     hostIdentity: () => first ? (first = false, new Promise(done => { resolve = done; })) : Promise.resolve(HOST),
     execute: async value => { calls.push(value); return ok(); } });
   const pending = transport.start(r, signal(), () => true);
@@ -107,12 +139,13 @@ test("profile and request are snapshotted before the first asynchronous host loo
   resolve(HOST); assert.equal((await pending).kind, "accepted");
   const args = calls[0]!.args;
   assert.ok(args.includes("--uid=1001")); assert.ok(args.includes("--property=ReadWritePaths=/srv/fixture"));
-  assert.ok(args.includes("--property=RuntimeMaxSec=12000ms")); assert.ok(!args.includes("mutation")); assert.ok(args.includes("FIXTURE=literal $HOME %n spaces=equal"));
+  assert.ok(args.includes("--property=RuntimeMaxSec=12000ms")); assert.ok(!args.includes("mutation"));
+  assert.equal(JSON.parse(args[args.lastIndexOf("--") - 1]!).FIXTURE, "literal $HOME %n spaces=equal");
 });
 
 test("authority revoked during asynchronous host verification prevents the manager call", async () => {
   let resolve!: (value: HostIdentity) => void, authorized = true, calls = 0, checks = 0;
-  const transport = createSystemdTransport({ profile: profile(), now: () => new Date(NOW),
+  const transport = createSystemdTransport({ ...gateRuntime(), profile: profile(), now: () => new Date(NOW),
     hostIdentity: () => new Promise(done => { resolve = done; }),
     execute: async () => { calls++; return ok(); } });
   const pending = transport.start(request(), signal(), () => { checks++; return authorized; });

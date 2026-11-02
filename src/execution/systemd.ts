@@ -4,6 +4,8 @@ import type { FileHandle } from "node:fs/promises";
 import { posix } from "node:path";
 import { encode, keys } from "../ledger/validation.ts";
 import { runProcess } from "../workers/process.ts";
+import { buildDeadlineGateCommand, readTrustedDispatchClock } from "./deadline-gate.ts";
+import type { DispatchClockAnchor } from "./deadline-gate.ts";
 import type { ProcessRequest, ProcessResult } from "../workers/process.ts";
 import type { HostIdentity, ServiceLaunchRequest, ServiceLimits, ServiceQueryRequest, ServiceQueryResult,
   ServiceSnapshot, ServiceStartResult, ServiceStopResult, SystemdProfile, SystemdTransport, UnitIdentity } from "./types.ts";
@@ -16,6 +18,8 @@ export interface SystemdTransportOptions {
   /** Trusted test/platform boundary; absent means a verified cgroup2 directory absence. */
   readCgroupState?: (controlGroup: string) => Promise<CgroupState>;
   now?: () => Date;
+  dispatchClock?: (expectedBootId: string) => Promise<DispatchClockAnchor>;
+  managerVersion?: (signal: AbortSignal) => Promise<number>;
 }
 export type CgroupState = "populated" | "empty" | "absent" | "unknown";
 
@@ -85,16 +89,24 @@ function strings(value: unknown, label: string): asserts value is string[] {
   if (!Array.isArray(value) || !value.length || value.length > 64 || new Set(value).size !== value.length || value.some(item => typeof item !== "string")) invalid(label);
 }
 function validateProfile(value: unknown): asserts value is SystemdProfile {
-  keys(value, ["userId", "groupId", "executables", "readOnlyPaths", "writableRoot", "allowedEnvironment", "maxima", "useSudo"]);
+  keys(value, ["userId", "groupId", "executables", "readOnlyPaths", "writableRoot", "allowedEnvironment", "maxima", "useSudo", "deadlineGate"]);
   integer(value.userId, 1, 0xffff_fffe, "trainer UID must be non-root"); integer(value.groupId, 1, 0xffff_fffe, "trainer GID must be non-root");
   strings(value.executables, "executable allowlist"); strings(value.readOnlyPaths, "read-only roots");
   for (const executable of value.executables) path(executable);
   for (const root of value.readOnlyPaths) path(root);
   path(value.writableRoot);
-  for (const declared of [value.writableRoot, ...value.readOnlyPaths, ...value.executables]) {
+  keys(value.deadlineGate, ["pythonExecutable", "scriptPath", "safetyMarginMs", "barrierTimeoutMs"]);
+  path(value.deadlineGate.pythonExecutable); path(value.deadlineGate.scriptPath);
+  // systemd event timers may each coalesce by 250 ms; allow additional clock,
+  // scheduling and kill latency. This minimum is not a hard real-time guarantee.
+  integer(value.deadlineGate.safetyMarginMs, 1000, 300_000, "deadline safety margin");
+  integer(value.deadlineGate.barrierTimeoutMs, 1, 300_000, "notification barrier timeout");
+  const gateScript = value.deadlineGate.scriptPath;
+  if (!value.readOnlyPaths.some(root => contains(root, gateScript))) invalid("deadline gate must be in a declared read-only root");
+  for (const declared of [value.writableRoot, ...value.readOnlyPaths, ...value.executables, value.deadlineGate.pythonExecutable, value.deadlineGate.scriptPath]) {
     if (["/home", "/root", "/run/systemd", "/run/dbus", "/run/containerd"].some(root => contains(root, declared))) invalid("declared path is reserved or hidden by the fixed service protections");
   }
-  for (const root of [...value.readOnlyPaths, ...value.executables]) if (contains(value.writableRoot, root) || contains(root, value.writableRoot)) invalid("writable root overlaps executable/read-only roots");
+  for (const root of [...value.readOnlyPaths, ...value.executables, value.deadlineGate.pythonExecutable, value.deadlineGate.scriptPath]) if (contains(value.writableRoot, root) || contains(root, value.writableRoot)) invalid("writable root overlaps executable/read-only roots");
   if (!Array.isArray(value.allowedEnvironment) || value.allowedEnvironment.length > 64 || new Set(value.allowedEnvironment).size !== value.allowedEnvironment.length || value.allowedEnvironment.some(item => typeof item !== "string" || !/^[A-Z_][A-Z0-9_]*$/u.test(item))) invalid("environment allowlist");
   limits(value.maxima); if (typeof value.useSudo !== "boolean") invalid("sudo policy");
 }
@@ -117,6 +129,7 @@ function validateLaunch(value: unknown, profile: SystemdProfile): asserts value 
     bounded(val, 8192, "environment value", true);
   }
   for (const name of Object.keys(profile.maxima) as Array<keyof ServiceLimits>) if (value.limits[name] > profile.maxima[name]) invalid(`${name} exceeds trusted profile`);
+  if (profile.deadlineGate.barrierTimeoutMs > value.limits.startTimeoutMs) invalid("notification barrier exceeds activation timeout");
   if (typeof value.deadlineAt !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u.test(value.deadlineAt) || !Number.isFinite(Date.parse(value.deadlineAt))) invalid("deadline must be canonical UTC");
 }
 
@@ -210,7 +223,8 @@ function processResult(raw: unknown): ProcessResult | null {
 
 /** Requires systemd >=254 and cgroup v2. Never retries or resets a unit.
  * Official command semantics: https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html
- * This is a transport, not authority, artifact verification or an absolute-deadline exec gate.
+ * Composes the required deadline gate. It does not grant authority, attest trainer
+ * artifacts or promise unconditional real-time completion under host failure.
  */
 export function createSystemdTransport(options: SystemdTransportOptions): SystemdTransport {
   const profile = plainCopy(options.profile); validateProfile(profile);
@@ -229,6 +243,13 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
       args: profile.useSudo ? ["-n", "--", executable, ...args] : args, cwd: "/", env: { ...ENVIRONMENT }, input: "",
       timeoutMs, maxOutputBytes: OUTPUT_LIMIT, signal };
     try { return processResult(await execute(request)); } catch { return null; }
+  }
+  async function nativeManagerVersion(signal: AbortSignal): Promise<number> {
+    const result = await call(CTL, ["--system", "--no-pager", "--no-ask-password", "show", "--property=Version", "--value"], QUERY_MS, signal);
+    if (!result || result.stopped || result.exitCode !== 0) throw new Error("Manager version unavailable");
+    const match = /^(\d+)(?:[.\-+~][A-Za-z0-9.+:~_-]+)?$/u.exec(result.stdout.trim());
+    if (!match) throw new Error("Manager version invalid");
+    return Number(match[1]);
   }
   async function managerSnapshot(request: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceQueryResult> {
       const result = await call(CTL, ["--system", "--no-pager", "--no-ask-password", "show", "--all", `--property=${PROPERTIES.join(",")}`, "--", request.identity.unitName], QUERY_MS, signal);
@@ -300,11 +321,15 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
     const request = plainCopy(raw); validateLaunch(request, profile);
     try {
       const before = await currentHost(); if (!sameHost(before, request.expectedHost)) return { kind: "unknown", reason: "host_identity_changed" };
-      const l = request.limits, remaining = Date.parse(request.deadlineAt) - now().getTime();
-      if (!Number.isFinite(remaining) || remaining < l.runtimeMs + l.startTimeoutMs + l.stopTimeoutMs) return { kind: "unknown", reason: "insufficient_deadline_budget" };
+      const version = await (options.managerVersion ?? nativeManagerVersion)(signal);
+      if (!Number.isSafeInteger(version) || version < 254) return { kind: "unknown", reason: "manager_version_unsupported" };
+      const anchor = await (options.dispatchClock ?? readTrustedDispatchClock)(before.bootId);
+      const command = buildDeadlineGateCommand(request, profile.deadlineGate, anchor);
+      const l = request.limits, remaining = Date.parse(request.deadlineAt) - Math.max(now().getTime(), anchor.utcMs);
+      if (!Number.isFinite(remaining) || remaining < l.runtimeMs + l.startTimeoutMs + l.stopTimeoutMs + profile.deadlineGate.safetyMarginMs) return { kind: "unknown", reason: "insufficient_deadline_budget" };
       const args = ["--system", "--no-ask-password", "--quiet", `--unit=${request.identity.unitName}`, `--description=${request.identity.description}`, "--expand-environment=no", "--remain-after-exit",
-        "--property=Type=exec", "--property=ExitType=cgroup", "--property=Restart=no", "--property=Slice=system.slice", `--uid=${profile.userId}`, `--gid=${profile.groupId}`,
-        `--working-directory=${request.command.cwd}`, `--property=RuntimeMaxSec=${l.runtimeMs}ms`, `--property=TimeoutStartSec=${l.startTimeoutMs}ms`,
+        "--property=Type=notify", "--property=NotifyAccess=main", "--property=RuntimeRandomizedExtraSec=0", "--property=ExitType=cgroup", "--property=Restart=no", "--property=Slice=system.slice", `--uid=${profile.userId}`, `--gid=${profile.groupId}`,
+        `--working-directory=${command.cwd}`, `--property=RuntimeMaxSec=${l.runtimeMs}ms`, `--property=TimeoutStartSec=${l.startTimeoutMs}ms`,
         // v255 rejects transient JobTimeoutUSec despite parsing JobTimeoutSec.
         // TimeoutStartSec bounds activation, not time queued in the manager.
         `--property=TimeoutStopSec=${l.stopTimeoutMs}ms`, "--property=TimeoutStopFailureMode=kill",
@@ -317,16 +342,18 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
         // namespace. Mask its private control socket, not that parent tree.
         "--property=InaccessiblePaths=-/run/systemd/private -/run/dbus -/run/docker.sock -/run/containerd",
         "--property=StandardInput=null", "--property=StandardOutput=journal", "--property=StandardError=journal",
-        "--", ENV, "-i", "--", ...Object.keys(request.command.environment).sort().map(name => `${name}=${request.command.environment[name]}`), request.command.executable, ...request.command.args];
-      // env -i drops the manager's environment too. Type=exec therefore acknowledges
-      // this wrapper; it does not prove Python/model/native preflight completed.
+        "--", ENV, "-i", "--", ...Object.keys(command.environment).sort().map(name => `${name}=${command.environment[name]}`), command.executable, ...command.args];
+      // The trusted gate notifies readiness, disables later notifications, waits
+      // for the manager barrier and checks the deadline again before trainer exec.
+      // Manager acceptance is not proof that the trainer or native preflight ran.
       // No await may intervene between the trusted revocation check and execute.
       if (signal.aborted || authorize() !== true) return { kind: "unknown", reason: "authority_revoked_before_submit" };
       const result = await call(RUN, args, Math.min(300_000, l.startTimeoutMs + 1000), signal);
       if (!result || result.stopped || result.exitCode !== 0) return { kind: "unknown", reason: "start_not_confirmed" };
       const after = await currentHost(); if (!sameHost(before, after)) return { kind: "unknown", reason: "host_identity_changed" };
       return { kind: "accepted", evidence: { source: "systemd-run", unitName: request.identity.unitName, description: request.identity.description,
-        machineId: after.machineId, bootId: after.bootId, observedAt: observedAt(), acceptedScope: "environment_wrapper_start", absoluteDeadlineEnforced: false } };
+        machineId: after.machineId, bootId: after.bootId, observedAt: observedAt(), acceptedScope: "deadline_gate_ready",
+        deadlineGateProtocol: "notify-v1", dispatchClockAnchor: { ...anchor }, deadlineQualification: "conditional_local_host", absoluteDeadlineEnforced: false } };
     } catch { return { kind: "unknown", reason: "start_failed" }; }
   }
   async function stop(raw: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceStopResult> {

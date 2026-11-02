@@ -1,4 +1,5 @@
 import type { JsonObject } from "../ledger/types.ts";
+import type { DeadlineGateConfig } from "./deadline-gate.ts";
 
 export interface HostIdentity { machineId: string; bootId: string }
 export interface UnitIdentity { unitName: string; description: string }
@@ -27,6 +28,8 @@ export interface SystemdProfile {
   maxima: ServiceLimits;
   /** Fixed sudo -n prefix for the system manager; never escalates the trainer UID. */
   useSudo: boolean;
+  /** Trusted gate code must be immutable to the trainer and in a read-only root. */
+  deadlineGate: DeadlineGateConfig;
 }
 export interface ServiceLaunchRequest {
   identity: UnitIdentity;
