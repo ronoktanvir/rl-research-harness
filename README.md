@@ -2,7 +2,7 @@
 
 A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
-The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger connected to a local Linux supervisor, CoworkerRL capture and deterministic assessment, attempt/byte/native-output checks, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training integrations, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
+The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger connected to a local Linux supervisor, CoworkerRL capture/assessment and persistent diagnostic workflows, a bounded conventional RL adapter, attempt/byte/native-output checks, a persistent task queue, and bounded arXiv metadata/abstract ingestion. CoworkerRL execution, general training adapters, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
 
 ## Run locally
 
@@ -34,6 +34,10 @@ Reusing a capture ID retrieves its existing observation; use a new ID for a fres
 
 The [deterministic assessment](docs/integrations/coworker-assessment.md) scans all captured steps, archives ranked diagnostic requests and produces a council evidence packet. It uses no model calls and preserves missing evaluation/baseline evidence. The [historical assessment](docs/research/coworker-assessment-2026-11-02.md) records the actual 30-step archive result.
 
+The [assessment workflow](docs/assessment-workflow.md) connects captured evidence to a zero-call queue task and persistent unresolved work items. `assessment-prepare`, `assessment-run` and `assessment-advance` preserve source/rule bindings across restart. Completing an assessment does not resolve its scientific questions.
+
+The [local conventional adapter](docs/integrations/conventional-local.md) runs fixed-map FrozenLake with separately trained policies, frozen evaluation and one shared random baseline. It requires a pinned Python 3.11 environment and an explicit `conventional-run` command. The [first real qualification](docs/research/conventional-qualification-2026-11-02.md) retains all three policy outcomes; it is an engineering result, not a general learning claim or a CoworkerRL campaign.
+
 ## Use existing subscriptions
 
 ```sh
@@ -54,7 +58,7 @@ A council's approval means its review protocol completed; it does not certify sc
 
 | Path | Responsibility |
 |---|---|
-| `src/cli.ts` | Explicit inspection and review commands; no training launch command |
+| `src/cli.ts` | Inspection/review commands and explicit bounded local FrozenLake execution; no CoworkerRL launch command |
 | `src/workers/` | Official clients, authentication checks, deadlines, output parsing and council wiring |
 | `src/research/` | Versioned evidence, review validation, bounded criticism, routing and decision bundles |
 | `src/runtime/` | Optional pinned Pi runtime with persistent conversations and injected models/tools |
@@ -64,6 +68,7 @@ A council's approval means its review protocol completed; it does not certify sc
 | `src/scheduler/` | Persistent tasks, invocation admission, account holds, bounded local runner and archived-report review plans |
 | `src/literature/` | Bounded arXiv queries, strict Atom parsing, captured response provenance and abstract-scoped evidence packets |
 | `src/integrations/coworker/` | CoworkerRL capture/assessment, confined file reader, attempt previews, artifact bytes and native-preflight output interpretation |
+| `src/integrations/conventional/` | Fixed Python worker, bounded protocol, pinned dependencies and auditable local experiment artifacts |
 | `test/` | Offline tests, real process-interruption tests and adversarial input cases |
 
 A resumed conversation is not proof that remote training resumed. Pi state and Markdown remain separate from the authoritative experiment ledger. [Ledger qualification](docs/ledger-implementation.md) and [dispatch qualification](docs/controller-dispatch.md) describe tested local guarantees and the remaining remote-worker requirements.
