@@ -50,6 +50,8 @@ The [protocol recovery](docs/research/run1-protocol-recovery.md) traces that his
 
 The [native credit calibration](docs/credit-calibration.md) executes only reviewed extraction sources against bounded synthetic fixtures, preserving unknown labels and per-fact errors. `credit-calibrate` writes a new local evidence bundle. [Actual qualification](docs/research/credit-calibration-qualification.md) reproduced 49 existing v2 cases and found a new false positive; extraction agreement does not establish acquisition or whole-task success.
 
+The [native observed-replay qualification](docs/research/observed-replay-qualification.md) passes 58 upstream tests and two combined counterexamples using actual v2 capture/replay with fake provider transports. It distinguishes authorized observation from text credit and semantic correctness. The [selected adapter design](docs/integrations/coworker-observed-replay.md) reuses that native path; its production harness integration remains pending.
+
 ## Use existing subscriptions
 
 ```sh
@@ -96,7 +98,7 @@ The [supervised backend](docs/supervised-backend.md) connects admitted actions t
 - [Research evidence](docs/research/evidence-and-standards.md): selected primary literature, publication status and limitations; recent selected work reaches October 14, 2026, without claiming an exhaustive search.
 - [Full-paper application](docs/research/paper-qualification-2026-11-02.md): manually inspected NeurIPS evaluation methodology mapped to proposed CoworkeRL checks; no new experimental result or automated literature service.
 - [Pi qualification](docs/runtime-qualification.md), [CoworkerRL integration](docs/integrations/coworker.md): tested boundaries and unknowns.
-- [Runtime decision](docs/decisions/0001-runtime.md), [subscription decision](docs/decisions/0002-subscription-workers.md): tradeoffs and reversal conditions.
+- [Runtime decision](docs/decisions/0001-runtime.md), [subscription decision](docs/decisions/0002-subscription-workers.md), [native replay decision](docs/decisions/0003-native-observed-replay.md): tradeoffs and reversal conditions.
 - [Project context](context/PROJECT.md), [agent instructions](AGENTS.md), [templates](docs/templates/research-records.md): continuity without treating proposals as completed capabilities.
 - [Independent code review](docs/reviews/2026-11-01-foundation.md): defects, corrections and regressions.
 
