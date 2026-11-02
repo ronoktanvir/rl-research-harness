@@ -34,4 +34,8 @@ Lead with the conclusion or current outcome. Explain the decisive mechanism and 
 
 ## Current scope
 
-This workspace initially contains an assessment and design, not a deployed harness. No cloud budget, provider account, GPU allocation, or operational authorization policy has been configured. The user's present request authorizes repository research and Markdown planning; do not describe proposed components as built or tested.
+The user has authorized implementation, a private GitHub repository, thoughtful commits, and independent agent code review. CoworkerRL is the first real integration target. The initial assessment is complete; implementation is now underway. No cloud budget, paid model-call allowance, GPU allocation, or production training campaign has been configured. Local development and deterministic tests can proceed. Do not describe proposed components as built or tested.
+
+## Code and review
+
+Use small, typed modules with explicit ownership of state and side effects. Explain non-obvious invariants in comments. Keep money in integer microdollars and distinguish reserved exposure from settled charges. Give tests failure-oriented names and exercise real persistence boundaries where appropriate. Run `npm run check` and relevant tests before committing code. Keep coherent commits; include independent review findings and their resolution in the handoff. Never commit credentials, local databases, dependency directories or runtime artifacts.
