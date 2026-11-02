@@ -29,7 +29,7 @@ export function syntheticInvestigationExecution(request: WorkerRequest, descript
       producerTargetsCredited: 0, producerCleanSuccessCount: 0, producerCreditHistogram: [1, 0, 0], summaryRan: 1, summaryResumedFrom: 0,
       summaryScoredTotal: 1, storedFunnelDenominator: 2, storedFunnelRate: 0, setFingerprint: "b".repeat(64),
       selectedPolicySettingsSha256: "c".repeat(64), adapterSha256: name === "trained" ? "a".repeat(64) : sha(""),
-      runtimeSourceSha: "c".repeat(40), baseModelRevision: "e".repeat(40), tokenizerSha256: "e".repeat(64), schemaContractHash: "f".repeat(64) };
+      runtimeSourceSha: "c".repeat(40), baseModelRevision: "c".repeat(40), tokenizerSha256: "e".repeat(64), schemaContractHash: "f".repeat(64) };
   };
   const result: CoworkerInvestigationResult = { schemaVersion: 1, kind: "coworker-run1-investigation-result", requestDigest: request.requestDigest,
     report: request.report, runManifest: file(request.report.path.replace(/report\.json$/u, "run-manifest.json")),
