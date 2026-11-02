@@ -1,0 +1,43 @@
+# Bounded Linux supervisor qualification
+
+**Status: the opt-in fixture suite is implemented and type-checked; real Linux execution remains pending CI evidence.** The ordinary offline suite skips it. These tests exercise a real systemd manager with short, non-root CPU processes. They do not execute CoworkeRL, use model accounts, provision infrastructure or qualify training.
+
+## Execution boundary
+
+The explicit CI step runs:
+
+```sh
+HARNESS_TEST_SYSTEMD=1 node --import tsx --test test/execution/systemd-linux.test.ts
+```
+
+The test fails, rather than silently skips, if the opt-in environment lacks Linux, systemd 254 or later, cgroup v2, a non-root runner identity, or noninteractive access to the system manager. It records the installed systemd version. There is no user-manager fallback, package installation or account creation. The fixed transport uses `sudo -n` for manager commands; each fixture runs as the existing runner's non-root UID/GID.
+
+The test stages only its fixed [fixture source](/Users/ronoktanvir/Documents/ChatGPT/RL-harness/test/execution/fixtures/service-child.cjs) into a separate read-only temporary source directory. This avoids relying on a checkout under `/home`, which the selected profile hides. The fixture writes one `events.jsonl` file in its private, owned temporary directory. The controller journal lives in a different directory. No credential or environment dump is collected, and the fixture contains no network operations.
+
+Each fixture has at most six seconds of configured active runtime, two seconds of start allowance and one second of stop grace. It also schedules its own fallback exit at twelve seconds. The tests require supervisor cleanup before that fallback; seeing a fallback event fails the assertion. Each case has a fifteen-second test bound. These are practical test bounds, not a claim of hard real-time scheduling.
+
+## What the five cases establish if they pass
+
+| Case | Required evidence |
+|---|---|
+| Successful process | The retained unit has the expected host/unit identity, exit code zero and successful result; dollar signs, braces and percent text reach the fixture unchanged. |
+| Nonzero process | Manager acceptance remains separate from a later exit status of 23 and an `exit-code` failure result. |
+| Relative runtime expiry | A running process is observed, ignores SIGTERM, then reaches a timeout result and disappears before its fallback timer. |
+| Explicit cancellation | Both a parent and a child in a separate process group demonstrably ignore SIGTERM; the original processes and their service cgroup are then gone or empty. |
+| Lost acceptance reply | The real start succeeds but a wrapper discards its reply. Query resolves the existing identity. After journal close/reopen, repeating launch performs no second start; invocation identity and the single start marker remain unchanged. |
+
+Cleanup assertions use recorded process start ticks, not bare PIDs, and verify that those processes were observed in the expected service cgroup. This avoids confusing PID reuse with a surviving child. A unit's absence alone never counts as termination proof. Test-only cleanup stops and resets only the exact generated unit after collecting the relevant observations.
+
+The lost-reply case simulates response loss; it does not kill the controller process during a real service launch. Separate offline journal tests exercise actual controller SIGKILL boundaries. Neither establishes host-reboot recovery or power-loss durability.
+
+## Semantics and remaining limits
+
+Systemd's [`Type=exec`](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html) acknowledges execution of the configured program. Here that program is the environment-clearing wrapper, so acceptance does not establish trainer readiness. Retaining an exited service enables subsequent exit inspection. The transport disables argument environment expansion, an option introduced in systemd 254.
+
+[`RuntimeMaxSec`](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) limits active runtime; it is not an absolute admission-to-completion deadline. [`KillMode=control-group`](https://www.freedesktop.org/software/systemd/man/latest/systemd.kill.html), a stop timeout and final SIGKILL supply the termination mechanism tested here. Startup delay and termination grace remain separate intervals.
+
+The transport conservatively returns unknown cgroup occupancy when the cgroup file is unavailable. The fixture tests can supplement that observation using their previously recorded process identities and kernel paths; this does not silently change the production worker's state interpretation.
+
+Even a passing CI run qualifies only the tested Linux image and short CPU lifecycle. It does not establish immutable artifact verification, an absolute execution-time authority check, remote fencing, hostile-code isolation, GPU/vLLM correctness, checkpoint recovery, helper/judge authentication, evaluation validity or cloud allocation release. The generic worker must remain separate from an enabled CoworkeRL backend until those contracts have their own evidence.
+
+The CI run URL and tested commit should be recorded here only after the explicit step succeeds. No actual systemd service or local privilege escalation was invoked during macOS development of these tests.
