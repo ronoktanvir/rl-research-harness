@@ -19,7 +19,7 @@ async function fixture() {
       source: "fixture", identity: { ...declaration.request.identity }, host: { ...declaration.request.expectedHost },
     } }; },
     query: async () => { queries++; return observed; },
-    stop: async () => { stops++; return { command: "sent", observation: observed }; },
+    stop: async (_request, _signal, authorize) => { assert.equal(authorize(), true); stops++; return { command: "sent", observation: observed }; },
   };
   const worker = (authorize: (job: Readonly<JobDeclaration>) => boolean = () => true, callTimeoutMs = 30) => createSupervisedWorker({ journal, transport,
     workerId: "worker-one", now: () => workerNow, authorize, callTimeoutMs });
@@ -39,6 +39,10 @@ test("a lost start reply is recovered by identity and reopen never starts that a
     f.reopen();
     const resumed = await f.worker(() => false).launch(f.declaration, signal());
     assert.equal(resumed.execution, "running"); assert.equal(f.starts(), 1);
+    const receipt = f.journal().observations(f.declaration.jobId).find(item => item.observationId === resumed.observationId);
+    assert.equal(receipt?.observation.operation, "query"); assert.equal(receipt?.sequence, resumed.observationSequence);
+    await f.worker().query(f.declaration.jobId, signal());
+    assert.notEqual(f.journal().read(f.declaration.jobId)?.latestObservation?.observationId, resumed.observationId);
     assert.equal(f.journal().observations(f.declaration.jobId)[0]?.observation.operation, "start");
   } finally { await f.close(); }
 });
@@ -71,9 +75,13 @@ test("an absent unit after interrupted intent remains unknown across retries and
 test("denied authority and cancellation before intent do not consume a launch identity", async () => {
   const f = await fixture();
   try {
-    assert.equal((await f.worker(() => false).launch(f.declaration, signal())).acceptance, "not_accepted");
+    const denied = await f.worker(() => false).launch(f.declaration, signal());
+    assert.equal(denied.acceptance, "not_accepted");
+    assert.equal(denied.observationId, null); assert.equal(denied.observationSequence, null);
     const aborted = new AbortController(); aborted.abort();
-    assert.equal((await f.worker().launch(f.declaration, aborted.signal)).acceptance, "not_accepted");
+    const cancelled = await f.worker().launch(f.declaration, aborted.signal);
+    assert.equal(cancelled.acceptance, "not_accepted");
+    assert.equal(cancelled.observationId, null); assert.equal(cancelled.observationSequence, null);
     assert.equal(f.journal().read(f.declaration.jobId), null); assert.equal(f.starts(), 0);
   } finally { await f.close(); }
 });
@@ -100,13 +108,56 @@ test("acceptance, process completion and targeted stopping remain distinct obser
     const worker = f.worker();
     await worker.launch(f.declaration, signal());
     f.setObservation({ kind: "absent", host: f.declaration.request.expectedHost, observedAt: workerNow.toISOString() });
-    const absent = await worker.cancel(f.declaration.jobId, signal());
+    const absent = await worker.cancel(f.declaration.jobId, signal(), () => true);
     assert.equal(absent.acceptance, "accepted"); assert.equal(absent.execution, "unknown");
+    assert.equal(absent.stopCommand, "sent");
+    assert.equal(f.journal().observations(f.declaration.jobId).find(item => item.observationId === absent.stopObservationId)?.observation.operation, "stop");
     f.setObservation({ kind: "present", snapshot: { ...workerSnapshot(f.declaration), mainPid: 0, subState: "exited", cgroupPopulated: null, execMainCode: 1 } });
     assert.equal((await worker.query(f.declaration.jobId, signal())).execution, "unknown");
     f.setObservation({ kind: "present", snapshot: { ...workerSnapshot(f.declaration), mainPid: 0, subState: "dead", activeState: "inactive", cgroupPopulated: false, execMainCode: 2, execMainStatus: 15, result: "signal" } });
     assert.equal((await worker.query(f.declaration.jobId, signal())).execution, "stopped");
     assert.equal(f.stops(), 1);
+  } finally { await f.close(); }
+});
+
+test("denied cleanup authority preserves launch history but returns a distinct not-sent receipt", async () => {
+  const f = await fixture();
+  try {
+    const worker = f.worker();
+    await worker.launch(f.declaration, signal());
+    const denied = await worker.cancel(f.declaration.jobId, signal(), () => false);
+    assert.equal(denied.acceptance, "accepted"); assert.equal(denied.stopCommand, "not_sent"); assert.equal(f.stops(), 0);
+    assert.equal(denied.observation?.kind, "present");
+    const receipt = f.journal().observations(f.declaration.jobId).find(item => item.observationId === denied.stopObservationId);
+    assert.equal(receipt?.observation.operation, "stop");
+    assert.equal(denied.observationId, denied.stopObservationId); assert.equal(denied.observationSequence, receipt?.sequence);
+    if (receipt?.observation.operation === "stop") assert.equal(receipt.observation.result.command, "not_sent");
+    const confirmed = await worker.cancel(f.declaration.jobId, signal(), () => true);
+    assert.equal(confirmed.stopCommand, "sent"); assert.notEqual(confirmed.stopObservationId, denied.stopObservationId);
+    await worker.query(f.declaration.jobId, signal());
+    assert.notEqual(f.journal().read(f.declaration.jobId)?.latestObservation?.observationId, confirmed.stopObservationId);
+    assert.equal(f.journal().observations(f.declaration.jobId).find(item => item.observationId === confirmed.stopObservationId)?.observation.operation, "stop");
+  } finally { await f.close(); }
+});
+
+test("timed out cancellation keeps its exact unknown receipt and late authority is revoked", async () => {
+  const f = await fixture();
+  try {
+    const worker = f.worker(() => true, 10);
+    await worker.launch(f.declaration, signal());
+    let permitted!: () => boolean, late!: (value: { command: "sent"; observation: ServiceQueryResult }) => void;
+    f.transport.stop = async (_request, _signal, authorize) => {
+      permitted = authorize;
+      return new Promise(resolve => { late = resolve; });
+    };
+    const result = await worker.cancel(f.declaration.jobId, signal(), () => true);
+    assert.equal(result.stopCommand, "unknown"); assert.equal(result.acceptance, "accepted"); assert.equal(permitted(), false);
+    const history = f.journal().observations(f.declaration.jobId);
+    assert.equal(history.at(-1)?.observationId, result.stopObservationId);
+    assert.equal(result.observationId, result.stopObservationId); assert.equal(result.observationSequence, history.at(-1)?.sequence);
+    late({ command: "sent", observation: { kind: "present", snapshot: workerSnapshot(f.declaration) } });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(f.journal().observations(f.declaration.jobId), history);
   } finally { await f.close(); }
 });
 

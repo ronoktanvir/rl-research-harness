@@ -59,7 +59,7 @@ test("confirmed cleanup after stop preserves the manager's timeout failure witho
   try {
     await f.worker().launch(declaration, signal());
     f.observe({ ...terminal(), activeState: "failed", subState: "failed", result: "timeout", execMainCode: 2, execMainStatus: 9 });
-    const stopped = await f.worker().cancel(declaration.jobId, signal());
+    const stopped = await f.worker().cancel(declaration.jobId, signal(), () => true);
     assert.equal(stopped.acceptance, "accepted"); assert.equal(stopped.execution, "failed");
     assert.equal(stopped.reason, "stop_observed");
     f.absent(); f.reopen();

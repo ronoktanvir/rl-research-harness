@@ -244,7 +244,7 @@ test("absence after an issued intent is only absence, not nonacceptance or succe
   const r = request(), absent = { ...ok(`Id=${r.identity.unitName}\nLoadState=not-found\n`), exitCode: 1 };
   const fixture = setup([absent, absent]);
   assert.deepEqual(await fixture.transport.query({ identity: r.identity, expectedHost: r.expectedHost }, signal()), { kind: "absent", host: HOST, observedAt: NOW.toISOString() });
-  const stopped = await fixture.transport.stop({ identity: r.identity, expectedHost: r.expectedHost }, signal());
+  const stopped = await fixture.transport.stop({ identity: r.identity, expectedHost: r.expectedHost }, signal(), () => true);
   assert.equal(stopped.command, "not_sent"); assert.equal(stopped.observation.kind, "absent");
   assert.equal(fixture.calls.length, 2); assert.ok(fixture.calls.every(call => call.args.includes("show")));
 });
@@ -268,14 +268,34 @@ test("host changes before or across a command preserve uncertainty", async () =>
 test("stop verifies ownership, never resets the unit, and queries the same invocation afterward", async () => {
   const stopped = show({ ActiveState: "inactive", SubState: "dead", MainPID: "0", ExecMainCode: "2", ExecMainStatus: "15" });
   const fixture = setup([ok(show()), ok(), ok(stopped), ok(stopped)], { cgroup: false });
-  const result = await fixture.transport.stop(queryRequest(), signal());
+  const result = await fixture.transport.stop(queryRequest(), signal(), () => true);
   assert.equal(result.command, "sent"); assert.equal(result.observation.kind, "present");
   assert.deepEqual(fixture.calls.map(call => call.args.find(arg => ["show", "stop"].includes(arg))), ["show", "stop", "show", "show"]);
   assert.ok(fixture.calls.every(call => !call.args.includes("reset-failed")));
   const replaced = setup([ok(show()), ok(), ok(show({ InvocationID: "f".repeat(32) }))]);
-  const changed = await replaced.transport.stop(queryRequest(), signal()); assert.equal(changed.command, "sent"); assert.equal(changed.observation.kind, "unknown");
+  const changed = await replaced.transport.stop(queryRequest(), signal(), () => true); assert.equal(changed.command, "sent"); assert.equal(changed.observation.kind, "unknown");
   const foreign = setup([ok(show({ Description: `rlh-v1:${"f".repeat(64)}` }))]);
-  assert.equal((await foreign.transport.stop(queryRequest(), signal())).command, "not_sent"); assert.equal(foreign.calls.length, 1);
+  assert.equal((await foreign.transport.stop(queryRequest(), signal(), () => true)).command, "not_sent"); assert.equal(foreign.calls.length, 1);
+});
+
+test("stop authority revoked during ownership lookup yields query evidence without a stop command", async () => {
+  let release!: () => void, allowed = true, authorityChecks = 0;
+  const calls: ProcessRequest[] = [];
+  const transport = createSystemdTransport({ profile: profile(), now: () => new Date(NOW), hostIdentity: async () => HOST,
+    readCgroupState: async () => "populated", execute: async request => {
+      calls.push(request);
+      await new Promise<void>(resolve => { release = resolve; });
+      return ok(show());
+    } });
+  const pending = transport.stop(queryRequest(), signal(), () => { authorityChecks++; return allowed; });
+  await new Promise(resolve => setImmediate(resolve));
+  allowed = false; release();
+  const result = await pending;
+  assert.equal(result.command, "not_sent"); assert.equal(result.observation.kind, "present");
+  assert.equal(authorityChecks, 1); assert.equal(calls.length, 1); assert.ok(calls[0]!.args.includes("show"));
+  const throwing = setup([ok(show())]);
+  const denied = await throwing.transport.stop(queryRequest(), signal(), () => { throw new Error("policy unavailable"); });
+  assert.equal(denied.command, "not_sent"); assert.equal(denied.observation.kind, "present"); assert.equal(throwing.calls.length, 1);
 });
 
 test("timeouts, exceptions, output overflow, spawn failure and nonzero start exits never trigger retries", async () => {

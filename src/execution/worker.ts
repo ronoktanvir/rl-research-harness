@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { hash, id, keys, digestValue, timestamp, integer } from "../ledger/validation.ts";
 import { JobJournalError } from "./journal.ts";
-import type { HostIdentity, JobDeclaration, JobJournal, JobObservation, JobRecord, ServiceCommand,
+import type { HostIdentity, JobDeclaration, JobJournal, JobObservation, JobObservationRecord, JobRecord, ServiceCommand,
   ServiceLimits, ServiceQueryRequest, ServiceQueryResult, ServiceSnapshot, SystemdTransport } from "./types.ts";
 
 /** Deployment code prepares these declarations after verifying artifacts. This constructor
@@ -65,11 +65,20 @@ export interface WorkerResult {
   execution: "running" | "succeeded" | "failed" | "stopped" | "unknown";
   reason: string;
   observation: ServiceQueryResult | null;
+  /** Exact record written by this call, even if another observation follows it. */
+  observationId: string | null;
+  observationSequence: number | null;
+}
+export interface WorkerCancellationResult extends WorkerResult {
+  /** Evidence of this stop operation, independent of the original launch's acceptance. */
+  stopCommand: "sent" | "not_sent" | "unknown";
+  /** Exact journal record produced by this call; never a later 'latest' lookup. */
+  stopObservationId: string | null;
 }
 export interface SupervisedWorker {
   launch(declaration: JobDeclaration, signal: AbortSignal): Promise<WorkerResult>;
   query(jobId: string, signal: AbortSignal): Promise<WorkerResult>;
-  cancel(jobId: string, signal: AbortSignal): Promise<WorkerResult>;
+  cancel(jobId: string, signal: AbortSignal, authorize: () => boolean): Promise<WorkerCancellationResult>;
 }
 export interface SupervisedWorkerOptions {
   journal: JobJournal;
@@ -155,22 +164,22 @@ export function createSupervisedWorker(options: SupervisedWorkerOptions): Superv
     return { identity: record.declaration.request.identity, expectedHost: record.declaration.request.expectedHost,
       ...(invocation ? { expectedInvocationId: invocation } : {}) };
   }
-  function persist(record: JobRecord, observation: JobObservation): JobObservation {
+  function persist(record: JobRecord, observation: JobObservation): JobObservationRecord {
     const common = { observationId: randomUUID(), jobId: record.declaration.jobId, actionId: record.declaration.actionId,
       declarationDigest: record.digest, observedAt: time() };
     try {
       const copied = copyData(observation);
-      return journal.recordObservation({ ...common, observation: copied }).observation;
+      return journal.recordObservation({ ...common, observation: copied });
     } catch (error) {
       if (!(error instanceof JobJournalError) || !["invalid", "conflict"].includes(error.code)) throw error;
       const unknown = { kind: "unknown" as const, reason: "malformed_or_mismatched_transport_result" };
       const fallback: JobObservation = observation.operation === "stop"
         ? { operation: "stop", result: { command: "unknown", observation: unknown } }
         : { operation: observation.operation, result: unknown };
-      return journal.recordObservation({ ...common, observation: fallback }).observation;
+      return journal.recordObservation({ ...common, observation: fallback });
     }
   }
-  function summarize(record: JobRecord, observation: ServiceQueryResult | null, reason: string): WorkerResult {
+  function summarize(record: JobRecord, observation: ServiceQueryResult | null, reason: string, receipt: JobObservationRecord): WorkerResult {
     const history = journal.observations(record.declaration.jobId);
     const accepted = history.some(item => item.observation.operation === "start" && item.observation.result.kind === "accepted" || snapshotOf(item.observation) !== null);
     let execution: WorkerResult["execution"] = "unknown";
@@ -195,13 +204,14 @@ export function createSupervisedWorker(options: SupervisedWorkerOptions): Superv
         execution = "running";
       }
     }
-    return { jobId: record.declaration.jobId, acceptance: accepted ? "accepted" : "unknown", execution, reason, observation };
+    return { jobId: record.declaration.jobId, acceptance: accepted ? "accepted" : "unknown", execution, reason, observation,
+      observationId: receipt.observationId, observationSequence: receipt.sequence };
   }
   async function query(record: JobRecord, signal: AbortSignal): Promise<WorkerResult> {
     const result = await bounded(child => transport.query(queryRequest(record), child), timeoutMs, signal);
-    const saved = persist(record, { operation: "query", result });
+    const receipt = persist(record, { operation: "query", result }), saved = receipt.observation;
     if (saved.operation !== "query") throw new Error("Invalid journal query result");
-    return summarize(record, saved.result, saved.result.kind === "unknown" ? saved.result.reason : "supervisor_observed");
+    return summarize(record, saved.result, saved.result.kind === "unknown" ? saved.result.reason : "supervisor_observed", receipt);
   }
   return {
     launch(raw, signal) {
@@ -218,7 +228,8 @@ export function createSupervisedWorker(options: SupervisedWorkerOptions): Superv
         const remaining = Date.parse(declaration.request.deadlineAt) - Date.parse(time());
         const lifecycle = declaration.request.limits.runtimeMs + declaration.request.limits.startTimeoutMs + declaration.request.limits.stopTimeoutMs;
         if (signal.aborted || !Number.isFinite(remaining) || remaining < lifecycle || authorize(declaration) !== true) {
-          return { jobId: declaration.jobId, acceptance: "not_accepted", execution: "unknown", reason: "authority_or_deadline_denied_before_intent", observation: null };
+          return { jobId: declaration.jobId, acceptance: "not_accepted", execution: "unknown", reason: "authority_or_deadline_denied_before_intent",
+            observation: null, observationId: null, observationSequence: null };
         }
         const intent = journal.prepareIntent(declaration);
         if (!intent.created) return query(intent.record, signal);
@@ -233,15 +244,26 @@ export function createSupervisedWorker(options: SupervisedWorkerOptions): Superv
       });
     },
     query(jobId, signal) { return serial(jobId, () => query(read(jobId), signal)); },
-    cancel(jobId, signal) {
+    cancel(jobId, signal, authorize) {
+      if (typeof authorize !== "function") throw new Error("Cancellation requires explicit authority");
       return serial(jobId, async () => {
         const record = read(jobId);
-        const raw = await bounded(child => transport.stop(queryRequest(record), child), timeoutMs, signal);
+        const raw = await bounded(async child => {
+          const stillAuthorized = () => {
+            try { return !child.aborted && authorize() === true; }
+            catch { return false; }
+          };
+          const request = queryRequest(record);
+          if (!stillAuthorized()) return { command: "not_sent" as const, observation: await transport.query(request, child) };
+          return transport.stop(request, child, stillAuthorized);
+        }, timeoutMs, signal);
         const result = raw && typeof raw === "object" && "command" in raw ? raw
           : { command: "unknown" as const, observation: { kind: "unknown" as const, reason: "stop_result_unknown" } };
-        const saved = persist(record, { operation: "stop", result });
+        const savedRecord = persist(record, { operation: "stop", result });
+        const saved = savedRecord.observation;
         if (saved.operation !== "stop") throw new Error("Invalid journal stop result");
-        return summarize(record, saved.result.observation, "stop_observed");
+        return { ...summarize(record, saved.result.observation, "stop_observed", savedRecord),
+          stopCommand: saved.result.command, stopObservationId: savedRecord.observationId };
       });
     },
   };

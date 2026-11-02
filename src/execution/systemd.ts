@@ -356,11 +356,17 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
         deadlineGateProtocol: "notify-v1", dispatchClockAnchor: { ...anchor }, deadlineQualification: "conditional_local_host", absoluteDeadlineEnforced: false } };
     } catch { return { kind: "unknown", reason: "start_failed" }; }
   }
-  async function stop(raw: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceStopResult> {
+  async function stop(raw: ServiceQueryRequest, signal: AbortSignal, authorize: () => boolean): Promise<ServiceStopResult> {
     const request = plainCopy(raw); validateQuery(request);
+    if (typeof authorize !== "function") invalid("stop requires explicit authority");
     const before = await query(request, signal);
     if (before.kind !== "present") return { command: "not_sent", observation: before };
     const pinned = { ...request, expectedInvocationId: before.snapshot.invocationId };
+    // Ownership lookup may await the manager/kernel. Recheck this cleanup
+    // operation's current authority at the actual effect boundary, not before it.
+    let allowed = false;
+    try { allowed = authorize() === true; } catch { /* A failed policy check denies effects. */ }
+    if (signal.aborted || !allowed) return { command: "not_sent", observation: before };
     const result = await call(CTL, ["--system", "--no-pager", "--no-ask-password", "stop", "--", request.identity.unitName], Math.min(300_000, profile.maxima.stopTimeoutMs + 1000), signal);
     return { command: result && !result.stopped && result.exitCode === 0 ? "sent" : "unknown", observation: await query(pinned, signal) };
   }

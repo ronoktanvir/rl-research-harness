@@ -274,7 +274,7 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
       assert.deepEqual(starts.map(event => event.mode).sort(), ["child", "tree"]);
       const running = await snapshot(fixture, value => value.activeState === "active" && value.cgroupPopulated === true);
       const stopped = await fixture.transport.stop({ identity: fixture.declaration.request.identity, expectedHost: host,
-        expectedInvocationId: running.invocationId }, AbortSignal.timeout(4_000));
+        expectedInvocationId: running.invocationId }, AbortSignal.timeout(4_000), () => true);
       t.diagnostic(`Stop transport state: ${JSON.stringify({ command: stopped.command, observation: observedState(stopped.observation) })}`);
       assert.equal(stopped.command, "sent");
       assert.equal(stopped.observation.kind, "present");
@@ -317,7 +317,7 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
         const starts = await until(async () => { const rows = (await fixture.events()).filter(event => event.event === "started");
           return rows.length ? rows : undefined; }, "Original service marker missing");
         assert.equal(starts.length, 1);
-        const cancelled = await reopened.cancel(fixture.declaration.jobId, AbortSignal.timeout(4_000));
+        const cancelled = await reopened.cancel(fixture.declaration.jobId, AbortSignal.timeout(4_000), () => true);
         t.diagnostic(`Worker cancel classification: ${JSON.stringify({ acceptance: cancelled.acceptance, execution: cancelled.execution, reason: cancelled.reason, observation: cancelled.observation ? observedState(cancelled.observation) : null })}`);
         assert.equal(cancelled.execution, "failed", "Forced shutdown preserves the manager's timeout result with confirmed cleanup");
         assert.equal(cancelled.observation?.kind, "present");

@@ -88,7 +88,7 @@ export interface SystemdTransport {
   hostIdentity(): Promise<HostIdentity>;
   start(request: ServiceLaunchRequest, signal: AbortSignal, authorize: () => boolean): Promise<ServiceStartResult>;
   query(request: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceQueryResult>;
-  stop(request: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceStopResult>;
+  stop(request: ServiceQueryRequest, signal: AbortSignal, authorize: () => boolean): Promise<ServiceStopResult>;
 }
 
 /** One immutable declaration is journaled before the first manager start call. */

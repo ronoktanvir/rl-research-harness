@@ -47,7 +47,7 @@ test("accepted receipt pins cancellation to its invocation even when every query
       cancelRequest = request;
       return { command: "not_sent", observation: { kind: "unknown", reason: "fixture_manager_unavailable" } };
     };
-    await f.worker().cancel(f.declaration.jobId, signal());
+    await f.worker().cancel(f.declaration.jobId, signal(), () => true);
     assert.equal(cancelRequest?.expectedInvocationId, invocationId);
   } finally { await f.close(); }
 });
@@ -61,9 +61,9 @@ for (const outcome of ["succeeded", "failed"] as const) {
         result: outcome === "succeeded" ? "success" : "exit-code", execMainCode: 1, execMainStatus: outcome === "succeeded" ? 0 : 7 };
       f.observe({ kind: "present", snapshot });
       assert.equal((await f.worker().launch(f.declaration, signal())).execution, outcome);
-      assert.equal((await f.worker().cancel(f.declaration.jobId, signal())).execution, outcome);
+      assert.equal((await f.worker().cancel(f.declaration.jobId, signal(), () => true)).execution, outcome);
       f.observe({ kind: "absent", host: f.declaration.request.expectedHost, observedAt: workerNow.toISOString() });
-      assert.equal((await f.worker().cancel(f.declaration.jobId, signal())).execution, outcome);
+      assert.equal((await f.worker().cancel(f.declaration.jobId, signal(), () => true)).execution, outcome);
       f.reopen();
       assert.equal((await f.worker().query(f.declaration.jobId, signal())).execution, outcome);
     } finally { await f.close(); }
