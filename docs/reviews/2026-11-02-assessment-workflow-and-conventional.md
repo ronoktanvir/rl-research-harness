@@ -29,3 +29,16 @@ Historical workflow ID: `assessment-workflow:4ff1eebcb8d4ebd2f33e5703875ee242039
 The conventional command is an explicit local engineering operation with a new-directory intent marker. It has no broker admission, remote launch recovery, host-crash durability, protected holdout or resumable checkpoint. Its result parser detects internal protocol inconsistencies, not fabricated but internally consistent data from an arbitrary trainer. The fixed worker and dependencies are trusted code; isolated Python mode and a scrubbed environment are not an OS security boundary.
 
 The assessment workflow preserves questions but does not collect or adjudicate their evidence. Native Coworker deployment, complete input closure, full-paper ingestion, scientific campaign selection and Droplet operations remain required. No provider-model calls, cloud allocations or changes to the arXiv hold were made during this work.
+
+## Published Linux evidence
+
+[CI run 41401284085](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41401284085) completed successfully at source `73c1191a7be6a80c6d9966857d4ee34f48c222ad`. Job logs were read, not inferred from a combined status:
+
+| Job | Observed qualification |
+|---|---|
+| `125133444889` / Node 24.22.1 | 434 passed, 0 failed, 2 explicit skips; typecheck and whitespace checks passed |
+| `125133444622` / Node 25.9.0 | Same 434/0/2 result and checks |
+| `125133444732` / conventional RL | Python 3.11.17; hash-locked package install; all 19 Python tests and the actual environment/repeat test passed |
+| `125133444453` / Linux supervisor | Seven native cases plus their parent passed; systemd 255.4-1ubuntu8.18 |
+
+The repository was reverified private. Runtime artifacts, databases and the scientific virtual environment remain ignored. Later documentation-only commits do not change this source qualification.
