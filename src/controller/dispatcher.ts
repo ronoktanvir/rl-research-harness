@@ -16,9 +16,9 @@ export interface BackendReply extends BackendRequest {
   evidence: JsonObject;
 }
 
-/** Implementations must enforce authority/deadlines remotely before effectful work.
- * A local check cannot prevent a stop arriving after the request has left this process.
- * No production adapter is supplied by this module.
+/** Implementations must enforce authority/deadlines at the execution boundary.
+ * A local check cannot revoke a remote request already in flight. The separate
+ * execution/backend.ts adapter is scoped to one trusted local supervisor host.
  */
 export interface ExperimentBackend {
   readonly name: string;
