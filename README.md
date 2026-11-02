@@ -2,7 +2,7 @@
 
 A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
-The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger with dispatch records, read-only CoworkerRL capture and attempt previews, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training backends, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
+The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger, a generic local Linux supervisor, read-only CoworkerRL capture and attempt previews, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training backends, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
 
 ## Run locally
 
@@ -57,12 +57,15 @@ A council's approval means its review protocol completed; it does not certify sc
 | `src/runtime/` | Optional pinned Pi runtime with persistent conversations and injected models/tools |
 | `src/ledger/` | Authoritative manifests, runs, reservations, dispatch identities, observations, accounting and stop barriers |
 | `src/controller/` | Single-submission/reconciliation coordinator and ledger-derived project summaries |
+| `src/execution/` | Durable local job intents, bounded systemd transport and supervised process observations; not an enabled training backend |
 | `src/scheduler/` | Persistent tasks, invocation admission, account holds, bounded local runner and archived-report review plans |
 | `src/literature/` | Bounded arXiv queries, strict Atom parsing, captured response provenance and abstract-scoped evidence packets |
 | `src/integrations/coworker/` | CoworkerRL references/metrics, confined file reader and immutable attempt previews |
 | `test/` | Offline tests, real process-interruption tests and adversarial input cases |
 
 A resumed conversation is not proof that remote training resumed. Pi state and Markdown remain separate from the authoritative experiment ledger. [Ledger qualification](docs/ledger-implementation.md) and [dispatch qualification](docs/controller-dispatch.md) describe tested local guarantees and the remaining remote-worker requirements.
+
+The [local supervisor](docs/local-supervisor.md) records intent before start and queries existing jobs after lost responses. Its [Linux qualification](docs/systemd-qualification.md) is an explicit CPU-only CI test; ordinary tests skip service creation. Native trainer readiness, absolute deadline enforcement and allocation release require separate evidence.
 
 ## Design and evidence
 
