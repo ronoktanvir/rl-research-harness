@@ -46,6 +46,8 @@ The [supervised conventional integration](docs/integrations/conventional-supervi
 
 The [historical evidence follow-up](docs/research/historical-evidence-followup.md) recovers Run-1 source/adapter identities and a held-out bare-base comparison. It preserves the absence of a matched training control and distinguishes producer scores from independently validated task success. These observations are archived without closing the scientific evidence requests.
 
+The [protocol recovery](docs/research/run1-protocol-recovery.md) traces that historical evaluation through its archived scorer, scripted-helper routing, separate judge stage and saved settings. It distinguishes Run-1 from the current v2 environment and specifies the next semantic tests. This is manually reviewed research evidence, not an automated protocol investigator or a new scientific approval.
+
 ## Use existing subscriptions
 
 ```sh

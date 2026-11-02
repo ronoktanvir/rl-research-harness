@@ -4,6 +4,8 @@ Updated 2026-11-02, America/Los_Angeles. The full goal remains active and incomp
 
 The latest [evidence-planning update](evidence-planning.md) connects verified investigation receipts to criterion-level support, remaining scientific requirements and prospective actions. It passed 524 local TypeScript tests with four native skips. On actual Run-1 evidence it supports ten narrow checks, preserves five open scientific requirements and links partial support to all three unresolved requests. A new council packet recommends protocol-provenance recovery before semantic calibration and matched-control design; no council or action was dispatched. See the [qualification record](research/evidence-planning-qualification.md).
 
+The subsequent [manual protocol recovery](research/run1-protocol-recovery.md) follows that recommendation through archived source and the actual saved evaluation declarations. It identifies deterministic credit, scripted-helper routing, a separate judging pass and an inaccurate metric description in the written specification. These findings are retained as reviewed Markdown; the immutable ledger update remains unchanged. Semantic calibration, complete historical execution custody and current v2 qualification are still open.
+
 ## Current evidence
 
 | Requirement | Evidence | Status |
