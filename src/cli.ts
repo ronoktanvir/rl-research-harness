@@ -9,6 +9,7 @@ import { createEvidencePacket, writeDecisionArtifacts } from "./research/index.t
 import { runCliReview } from "./workers/cli.ts";
 import { runCliCouncil } from "./workers/council.ts";
 import type { CliBackend } from "./workers/cli.ts";
+import { QUEUE_USAGE, queueCommand } from "./scheduler/commands.ts";
 
 const USAGE = `RL research harness
 
@@ -32,6 +33,8 @@ proposal revisions. It saves JSON/Markdown decisions; it cannot launch training.
 smoke makes one short, tool-suppressed client call. API fallback is not configured.
 Ledger commands take exclusive local ownership and recover abandoned dispatches as
 unknown. They cannot attach to a running controller or confirm remote cancellation.
+
+${QUEUE_USAGE}
 `;
 
 function print(value: unknown): void {
@@ -51,6 +54,8 @@ function backend(value: string | undefined): CliBackend {
 export async function main(args: string[]): Promise<number> {
   const [command, ...rest] = args;
   if (!command || command === "--help" || command === "help") { console.log(USAGE); return 0; }
+  const queued = await queueCommand(args);
+  if (queued !== null) return queued;
   if (command === "inspect" && rest.length === 1) {
     console.log(JSON.stringify(await inspectCoworkerProject(rest[0]!), null, 2));
     return 0;

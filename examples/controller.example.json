@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "ledgerPath": "../.harness/experiments.sqlite",
+  "queuePath": "../.harness/research-queue.sqlite",
+  "workerId": "local-controller",
+  "limits": { "maxClientInvocations": 0, "maxParallel": 1 },
+  "projects": {
+    "coworker": {
+      "root": "../../CoworkeRL",
+      "summaryDirectory": "../.harness/project-summaries",
+      "limits": { "maxClientInvocations": 0, "maxParallel": 1 }
+    }
+  }
+}
