@@ -30,6 +30,8 @@ jobs:
       - run: npm run check
       - name: Check historical evidence parser without project data
         run: python3 -I -B -m unittest discover -s test/integrations -p '*investigation*test.py' -v
+      - name: Check pinned scorer probe without private source data
+        run: python3 -I -B -m unittest discover -s test/integrations -p '*credit_probe_test.py' -v
       - run: npm test
       - run: git diff --check
 
