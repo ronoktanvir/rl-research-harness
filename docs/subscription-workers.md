@@ -10,6 +10,8 @@ As verified on 2026-11-01, eligible ChatGPT Pro and Business subscribers can act
 
 Anthropic permits an end user to sign into the unmodified Claude Code client with their subscription. Its documentation distinguishes that use from third-party applications collecting or routing users' subscription credentials. This harness calls the unmodified client; it does not implement Claude login or use Claude subscription tokens in Pi's API provider. See [Claude authentication and credential use](https://code.claude.com/docs/en/legal-and-compliance).
 
+The current [Claude subscription guidance](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan), including its October 7, 2026 update, explicitly retains subscription-limit billing for signed-in Agent SDK and `claude -p` use. Thus the SDK/CLI distinction does not itself determine billing. [Claude authentication](https://code.claude.com/docs/en/authentication#generate-a-long-lived-token) also documents subscription tokens for CI and scripts; `--bare` omits subscription authentication. These are supported routes to qualify on the intended server, not proof that our server deployment has been tested. No credential was generated or inspected during this documentation check.
+
 These integrations consume the selected account's allowance. They do not multiply that allowance or guarantee unlimited use. Any account-level extra-usage/credit settings remain under the provider's control; an OAuth session is not proof of zero additional billing. The harness does not configure an API fallback or change those settings.
 
 ## What a budget means here
