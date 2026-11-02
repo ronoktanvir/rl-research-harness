@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSystemdTransport } from "../../src/execution/systemd.ts";
+import { cgroupMountFingerprint, createSystemdTransport } from "../../src/execution/systemd.ts";
+import type { CgroupState } from "../../src/execution/systemd.ts";
 import type { HostIdentity, ServiceLaunchRequest, SystemdProfile } from "../../src/execution/types.ts";
 import type { ProcessRequest, ProcessResult } from "../../src/workers/process.ts";
 
@@ -8,6 +9,22 @@ const HOST: HostIdentity = { machineId: "a".repeat(32), bootId: "aaaaaaaa-bbbb-c
 const INVOCATION = "b".repeat(32), NOW = new Date("2026-11-02T12:00:00.000Z");
 const signal = () => new AbortController().signal;
 const ok = (stdout = ""): ProcessResult => ({ exitCode: 0, stdout, stderr: "", stopped: null });
+test("native cgroup mount verification rejects partial, masked, foreign and ambiguous hierarchy views", () => {
+  const input = { filesystemType: 0x63677270, descriptor: "pos:\t0\nflags:\t02300000\nmnt_id:\t24\n",
+    mounts: "20 1 0:1 / / rw - ext4 /dev/root rw\n24 20 0:29 / /sys/fs/cgroup ro,nosuid,nodev,noexec - cgroup2 cgroup2 rw\n",
+    ownNamespace: "cgroup:[4026531835]", managerCgroup: "0::/init.scope\n" };
+  assert.equal(typeof cgroupMountFingerprint(input), "string");
+  for (const change of [
+    { filesystemType: 0x01021994 }, { descriptor: "mnt_id:\t25\n" }, { descriptor: "mnt_id:\t24\nmnt_id:\t24\n" },
+    { managerCgroup: "0::/\n" }, { managerCgroup: "0::/../init.scope\n" }, { managerCgroup: "0::/init.scope\n0::/init.scope\n" },
+    { mounts: input.mounts.replace("0:29 / /sys", "0:29 /private /sys") },
+    { mounts: input.mounts.replace("- cgroup2 cgroup2", "- tmpfs tmpfs") },
+    { mounts: input.mounts + "25 24 0:30 / /sys/fs/cgroup/system.slice ro - tmpfs tmpfs ro\n" },
+    { mounts: input.mounts + input.mounts.split("\n")[1] + "\n" }, { ownNamespace: "invalid" },
+  ]) assert.equal(cgroupMountFingerprint({ ...input, ...change }), null, JSON.stringify(change));
+  assert.notEqual(cgroupMountFingerprint(input), cgroupMountFingerprint({ ...input, ownNamespace: "cgroup:[4026532000]" }));
+});
+
 function profile(): SystemdProfile {
   return { userId: 1001, groupId: 1001, executables: ["/usr/bin/node"], readOnlyPaths: ["/opt/fixture"], writableRoot: "/srv/fixture",
     allowedEnvironment: ["PATH", "FIXTURE"], useSudo: false, maxima: { runtimeMs: 60_000, startTimeoutMs: 5000, stopTimeoutMs: 2000, memoryMaxBytes: 536_870_912, tasksMax: 64 } };
@@ -25,11 +42,12 @@ function show(overrides: Record<string, string> = {}): string {
     LoadState: "loaded", ActiveState: "active", SubState: "running", Result: "success", MainPID: "123", ExecMainCode: "0", ExecMainStatus: "0",
     ControlGroup: `/system.slice/${r.identity.unitName}`, ...overrides }).map(([key, value]) => `${key}=${value}`).join("\n") + "\n";
 }
-function setup(responses: Array<ProcessResult | Error>, options: { profile?: SystemdProfile; hosts?: HostIdentity[]; cgroup?: boolean | null } = {}) {
+function setup(responses: Array<ProcessResult | Error>, options: { profile?: SystemdProfile; hosts?: HostIdentity[]; cgroup?: boolean | null; cgroupState?: CgroupState } = {}) {
   const calls: ProcessRequest[] = [], cgroups: string[] = [], hosts = [...(options.hosts ?? [HOST])];
   const transport = createSystemdTransport({ profile: options.profile ?? profile(), now: () => new Date(NOW),
     hostIdentity: async () => structuredClone(hosts.length > 1 ? hosts.shift()! : hosts[0]!),
-    readCgroupPopulated: async path => { cgroups.push(path); return options.cgroup ?? null; },
+    ...(options.cgroupState ? { readCgroupState: async (path: string) => { cgroups.push(path); return options.cgroupState!; } }
+      : { readCgroupPopulated: async (path: string) => { cgroups.push(path); return options.cgroup ?? null; } }),
     execute: async call => { calls.push(call); const result = responses.shift(); if (!result) throw new Error("unexpected process call"); if (result instanceof Error) throw result; return result; } });
   return { transport, calls, cgroups };
 }
@@ -44,7 +62,7 @@ test("start uses literal argv, fixed env clearing, bounded cgroup policy and no 
   assert.equal(call.executable, "/usr/bin/systemd-run"); assert.equal(call.cwd, "/"); assert.equal(call.input, "");
   assert.equal(call.timeoutMs, 3000); assert.equal(call.maxOutputBytes, 32_768);
   assert.deepEqual(call.env, { PATH: "/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C", LC_ALL: "C", SYSTEMD_PAGER: "cat", SYSTEMD_COLORS: "0" });
-  for (const arg of ["--system", "--expand-environment=no", "--property=Type=exec", "--property=ExitType=cgroup", "--remain-after-exit", "--property=Restart=no", "--uid=1001", "--gid=1001",
+  for (const arg of ["--system", "--expand-environment=no", "--property=Type=exec", "--property=ExitType=cgroup", "--remain-after-exit", "--property=Restart=no", "--property=Slice=system.slice", "--uid=1001", "--gid=1001",
     "--property=RuntimeMaxSec=12000ms", "--property=TimeoutStartSec=2000ms", "--property=TimeoutStopSec=1000ms", "--property=KillMode=control-group",
     "--property=SendSIGKILL=yes", "--property=Delegate=no", "--property=MemoryMax=268435456", "--property=TasksMax=16", "--property=NoNewPrivileges=yes",
     "--property=ProtectSystem=strict", "--property=ReadOnlyPaths=/opt/fixture", "--property=ReadWritePaths=/srv/fixture"]) assert.ok(call.args.includes(arg), arg);
@@ -117,13 +135,76 @@ test("query is read-only and returns strict host, invocation, state and confined
 });
 
 test("retained exited service differs from running, and unreadable cgroup remains unestablished", async () => {
-  const fixture = setup([ok(show({ SubState: "exited", MainPID: "0", ExecMainCode: "1", ExecMainStatus: "0" }))], { cgroup: false });
+  const ended = show({ SubState: "exited", MainPID: "0", ExecMainCode: "1", ExecMainStatus: "0" });
+  const fixture = setup([ok(ended), ok(ended)], { cgroup: false });
   const result = await fixture.transport.query(queryRequest(), signal());
   assert.equal(result.kind, "present"); if (result.kind === "present") { assert.equal(result.snapshot.subState, "exited"); assert.equal(result.snapshot.cgroupPopulated, false); }
   const uncertain = setup([ok(show({ MainPID: "0", ControlGroup: "" }))]);
   const other = await uncertain.transport.query(queryRequest(), signal());
   assert.equal(other.kind, "present"); if (other.kind === "present") assert.equal(other.snapshot.cgroupPopulated, null);
   assert.equal(uncertain.cgroups.length, 0);
+});
+
+test("terminal cleanup proof brackets exact cgroup absence or emptiness without inventing a manager path", async () => {
+  for (const cgroupState of ["empty", "absent"] as const) {
+    const ended = show({ SubState: "exited", MainPID: "0", ExecMainCode: "1", ExecMainStatus: "0", ControlGroup: "" });
+    const fixture = setup([ok(ended), ok(ended)], { cgroupState });
+    const result = await fixture.transport.query(queryRequest(), signal());
+    assert.equal(result.kind, "present");
+    if (result.kind === "present") {
+      assert.equal(result.snapshot.controlGroup, ""); assert.equal(result.snapshot.cgroupPopulated, false);
+      assert.deepEqual(result.snapshot.cleanupEvidence, { kind: cgroupState === "empty" ? "cgroup_v2_empty" : "cgroup_v2_absent",
+        controlGroup: `/system.slice/${request().identity.unitName}`, invocationId: INVOCATION, observedAt: NOW.toISOString(), confirmedAt: NOW.toISOString() });
+    }
+    assert.deepEqual(fixture.cgroups, [`/system.slice/${request().identity.unitName}`]);
+    assert.equal(fixture.calls.length, 2); assert.ok(fixture.calls.every(call => call.args.includes("show")));
+  }
+});
+
+test("cleanup permits manager path removal but rejects replacement, state changes, loss or malformed confirmation", async () => {
+  const fields = { SubState: "exited", MainPID: "0", ExecMainCode: "1", ExecMainStatus: "0" };
+  const first = show(fields), last = show({ ...fields, ControlGroup: "" });
+  const good = setup([ok(first), ok(last)], { cgroupState: "absent" });
+  const result = await good.transport.query(queryRequest(), signal());
+  assert.equal(result.kind, "present"); if (result.kind === "present") assert.equal(result.snapshot.cleanupEvidence?.kind, "cgroup_v2_absent");
+  for (const changed of [show(), show({ ...fields, InvocationID: "f".repeat(32) }), show({ ...fields, Result: "exit-code", ExecMainStatus: "1" }),
+    show({ ...fields, MainPID: "123" }), show({ ...fields, Description: `rlh-v1:${"f".repeat(64)}` }),
+    `Id=${request().identity.unitName}\nLoadState=not-found\n`, "malformed"]) {
+    const fixture = setup([ok(first), ok(changed)], { cgroupState: "absent" });
+    assert.equal((await fixture.transport.query(queryRequest(), signal())).kind, "unknown");
+  }
+});
+
+test("kernel uncertainty and incomplete execution never become terminal absence proof", async () => {
+  const ended = show({ SubState: "exited", MainPID: "0", ExecMainCode: "1", ControlGroup: "" });
+  const unreadable = setup([ok(ended)], { cgroupState: "unknown" });
+  const result = await unreadable.transport.query(queryRequest(), signal());
+  assert.equal(result.kind, "present");
+  if (result.kind === "present") { assert.equal(result.snapshot.cgroupPopulated, null); assert.equal(result.snapshot.cleanupEvidence, undefined); }
+  assert.equal(unreadable.calls.length, 1);
+  for (const fields of [{}, { SubState: "exited", MainPID: "0", ExecMainCode: "0" }, { ActiveState: "deactivating", SubState: "stop-sigterm", MainPID: "0", ExecMainCode: "2" }]) {
+    const fixture = setup([ok(show(fields))], { cgroupState: "absent" });
+    const value = await fixture.transport.query(queryRequest(), signal());
+    assert.equal(value.kind, "present");
+    if (value.kind === "present") { assert.equal(value.snapshot.cgroupPopulated, null); assert.equal(value.snapshot.cleanupEvidence, undefined); }
+  }
+  const conflict = setup([ok(ended)], { cgroupState: "populated" });
+  assert.deepEqual(await conflict.transport.query(queryRequest(), signal()), { kind: "unknown", reason: "terminal_cgroup_populated" });
+});
+
+test("terminal proof fails closed on reboot, cancellation and backward clock movement", async () => {
+  const ended = show({ SubState: "exited", MainPID: "0", ExecMainCode: "1", ControlGroup: "" });
+  const changedHost = { ...HOST, bootId: "11111111-2222-3333-4444-555555555555" };
+  const reboot = setup([ok(ended), ok(ended)], { cgroupState: "absent", hosts: [HOST, changedHost] });
+  assert.equal((await reboot.transport.query(queryRequest(), signal())).kind, "unknown");
+  const controller = new AbortController();
+  const aborted = createSystemdTransport({ profile: profile(), now: () => new Date(NOW), hostIdentity: async () => HOST,
+    execute: async () => ok(ended), readCgroupState: async () => { controller.abort(); return "absent"; } });
+  assert.equal((await aborted.query(queryRequest(), controller.signal)).kind, "unknown");
+  let clockCalls = 0;
+  const clock = createSystemdTransport({ profile: profile(), now: () => new Date(NOW.getTime() - clockCalls++), hostIdentity: async () => HOST,
+    execute: async () => ok(ended), readCgroupState: async () => "absent" });
+  assert.deepEqual(await clock.query(queryRequest(), signal()), { kind: "unknown", reason: "observation_clock_changed" });
 });
 
 test("absence after an issued intent is only absence, not nonacceptance or successful cleanup", async () => {
@@ -152,10 +233,11 @@ test("host changes before or across a command preserve uncertainty", async () =>
 });
 
 test("stop verifies ownership, never resets the unit, and queries the same invocation afterward", async () => {
-  const fixture = setup([ok(show()), ok(), ok(show({ ActiveState: "inactive", SubState: "dead", MainPID: "0", ExecMainCode: "2", ExecMainStatus: "15" }))], { cgroup: false });
+  const stopped = show({ ActiveState: "inactive", SubState: "dead", MainPID: "0", ExecMainCode: "2", ExecMainStatus: "15" });
+  const fixture = setup([ok(show()), ok(), ok(stopped), ok(stopped)], { cgroup: false });
   const result = await fixture.transport.stop(queryRequest(), signal());
   assert.equal(result.command, "sent"); assert.equal(result.observation.kind, "present");
-  assert.deepEqual(fixture.calls.map(call => call.args.find(arg => ["show", "stop"].includes(arg))), ["show", "stop", "show"]);
+  assert.deepEqual(fixture.calls.map(call => call.args.find(arg => ["show", "stop"].includes(arg))), ["show", "stop", "show", "show"]);
   assert.ok(fixture.calls.every(call => !call.args.includes("reset-failed")));
   const replaced = setup([ok(show()), ok(), ok(show({ InvocationID: "f".repeat(32) }))]);
   const changed = await replaced.transport.stop(queryRequest(), signal()); assert.equal(changed.command, "sent"); assert.equal(changed.observation.kind, "unknown");

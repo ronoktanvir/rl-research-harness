@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { open, readlink, statfs } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { posix } from "node:path";
 import { encode, keys } from "../ledger/validation.ts";
 import { runProcess } from "../workers/process.ts";
@@ -12,8 +13,11 @@ export interface SystemdTransportOptions {
   execute?: typeof runProcess;
   hostIdentity?: () => Promise<HostIdentity>;
   readCgroupPopulated?: (controlGroup: string) => Promise<boolean | null>;
+  /** Trusted test/platform boundary; absent means a verified cgroup2 directory absence. */
+  readCgroupState?: (controlGroup: string) => Promise<CgroupState>;
   now?: () => Date;
 }
+export type CgroupState = "populated" | "empty" | "absent" | "unknown";
 
 const RUN = "/usr/bin/systemd-run", CTL = "/usr/bin/systemctl", ENV = "/usr/bin/env", SUDO = "/usr/bin/sudo";
 const OUTPUT_LIMIT = 32_768;
@@ -129,15 +133,60 @@ async function nativeHost(): Promise<HostIdentity> {
   const [machineId, bootId] = await Promise.all([boundedFile("/etc/machine-id", 64), boundedFile("/proc/sys/kernel/random/boot_id", 64)]);
   const value = { machineId: machineId.trim(), bootId: bootId.trim() }; host(value); return value;
 }
-async function nativeCgroup(controlGroup: string): Promise<boolean | null> {
-  // This path is kernel-owned; no training cgroup delegation is enabled.
-  if (!/^\/system\.slice\/rlh-[a-f0-9]{64}\.service$/u.test(controlGroup)) return null;
+async function cgroupMountContext(root: FileHandle): Promise<string> {
+  const pinned = `/proc/self/fd/${root.fd}`;
+  const [filesystem, descriptor, mounts, ownNamespace, managerCgroup] = await Promise.all([
+    statfs(pinned), boundedFile(`/proc/self/fdinfo/${root.fd}`), boundedFile("/proc/self/mountinfo", 262_144),
+    readlink("/proc/self/ns/cgroup"), boundedFile("/proc/1/cgroup"),
+  ]);
+  const fingerprint = cgroupMountFingerprint({ filesystemType: filesystem.type, descriptor, mounts, ownNamespace, managerCgroup });
+  if (!fingerprint) throw new Error("Not the system manager's standard cgroup2 root mount");
+  return fingerprint;
+}
+/** Pure verification of bounded native observations; never accesses a filesystem. */
+export function cgroupMountFingerprint(input: { filesystemType: number; descriptor: string; mounts: string; ownNamespace: string; managerCgroup: string }): string | null {
+  const { filesystemType, descriptor, mounts, ownNamespace, managerCgroup } = input;
+  if (filesystemType !== 0x63677270 || !/^cgroup:\[\d+\]$/u.test(ownNamespace)) return null;
+  // PID1's documented init.scope must be visible at its real path. Comparing
+  // /proc/1/ns links would require ptrace permission for an unprivileged reader.
+  const unified = managerCgroup.trim().split("\n").filter(line => line.startsWith("0:"));
+  if (unified.length !== 1 || unified[0] !== "0::/init.scope") return null;
+  const ids = descriptor.split("\n").filter(line => line.startsWith("mnt_id:"));
+  if (ids.length !== 1 || !/^mnt_id:\s+\d+$/u.test(ids[0]!)) return null;
+  const id = ids[0]!.split(/\s+/u)[1];
+  const records = mounts.split("\n").filter(Boolean).map(line => ({ line, fields: line.split(" ") }));
+  const matches = records.filter(record => record.fields[0] === id);
+  if (matches.length !== 1) return null;
+  const record = matches[0]!, separator = record.fields.indexOf("-");
+  if (record.fields[3] !== "/" || record.fields[4] !== "/sys/fs/cgroup" || separator < 6 || record.fields[separator + 1] !== "cgroup2"
+    || records.some(item => item.fields[4]?.startsWith("/sys/fs/cgroup/"))) return null;
+  return `${ownNamespace}\n${record.line}`;
+}
+async function nativeCgroup(controlGroup: string): Promise<CgroupState> {
+  // cgroup2 exposes kernel-created files/directories, never user-created symlinks.
+  // Pin the mount before traversing it; a missing events file alone proves nothing.
+  if (!/^\/system\.slice\/rlh-[a-f0-9]{64}\.service$/u.test(controlGroup)) return "unknown";
+  let root: FileHandle | undefined, group: FileHandle | undefined;
   try {
-    const text = await boundedFile(`/sys/fs/cgroup${controlGroup}/cgroup.events`);
-    const values = text.trim().split("\n").filter(line => line.startsWith("populated "));
-    if (values.length !== 1 || !/^populated [01]$/u.test(values[0]!)) return null;
-    return values[0] === "populated 1";
-  } catch { return null; } // Removed/unreadable cgroup is not proof of completed cleanup.
+    root = await open("/sys/fs/cgroup", constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    const before = await cgroupMountContext(root);
+    let state: CgroupState;
+    try { group = await open(`/proc/self/fd/${root.fd}${controlGroup}`, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); }
+    catch (error) {
+      if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error;
+    }
+    if (!group) state = "absent";
+    else {
+      const [rootStat, groupStat] = await Promise.all([root.stat(), group.stat()]);
+      if (rootStat.dev !== groupStat.dev) throw new Error("Cgroup directory changed filesystem");
+      const text = await boundedFile(`/proc/self/fd/${group.fd}/cgroup.events`);
+      const values = text.trim().split("\n").filter(line => line.startsWith("populated "));
+      if (values.length !== 1 || !/^populated [01]$/u.test(values[0]!)) throw new Error("Malformed cgroup population");
+      state = values[0] === "populated 1" ? "populated" : "empty";
+    }
+    return before === await cgroupMountContext(root) ? state : "unknown";
+  } catch { return "unknown"; }
+  finally { await group?.close(); await root?.close(); }
 }
 function properties(stdout: string): Record<string, string> | null {
   const result: Record<string, string> = {};
@@ -166,7 +215,11 @@ function processResult(raw: unknown): ProcessResult | null {
 export function createSystemdTransport(options: SystemdTransportOptions): SystemdTransport {
   const profile = plainCopy(options.profile); validateProfile(profile);
   const execute = options.execute ?? runProcess, hostReader = options.hostIdentity ?? nativeHost;
-  const cgroupReader = options.readCgroupPopulated ?? nativeCgroup, now = options.now ?? (() => new Date());
+  if (options.readCgroupState && options.readCgroupPopulated) invalid("choose only one cgroup reader");
+  const legacyReader = options.readCgroupPopulated;
+  const cgroupReader = options.readCgroupState ?? (legacyReader ? async (path: string): Promise<CgroupState> => {
+    const value = await legacyReader(path); return value === true ? "populated" : value === false ? "empty" : "unknown";
+  } : nativeCgroup), now = options.now ?? (() => new Date());
   if (!options.execute && process.platform !== "linux") throw new Error("The native systemd transport requires Linux");
   const observedAt = () => now().toISOString();
   async function currentHost(): Promise<HostIdentity> { const value = plainCopy(await hostReader()); host(value); return value; }
@@ -177,19 +230,12 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
       timeoutMs, maxOutputBytes: OUTPUT_LIMIT, signal };
     try { return processResult(await execute(request)); } catch { return null; }
   }
-  async function query(raw: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceQueryResult> {
-    const request = plainCopy(raw); validateQuery(request);
-    try {
-      if (signal.aborted) return { kind: "unknown", reason: "cancelled" };
-      const before = await currentHost(); if (!sameHost(before, request.expectedHost)) return { kind: "unknown", reason: "host_identity_changed" };
+  async function managerSnapshot(request: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceQueryResult> {
       const result = await call(CTL, ["--system", "--no-pager", "--no-ask-password", "show", "--all", `--property=${PROPERTIES.join(",")}`, "--", request.identity.unitName], QUERY_MS, signal);
       if (!result || result.stopped || result.exitCode === null) return { kind: "unknown", reason: "query_incomplete" };
       const values = properties(result.stdout);
       if (!values || values.Id !== request.identity.unitName) return { kind: "unknown", reason: "unit_snapshot_invalid" };
-      if (values.LoadState === "not-found") {
-        const after = await currentHost();
-        return sameHost(before, after) ? { kind: "absent", host: after, observedAt: observedAt() } : { kind: "unknown", reason: "host_identity_changed" };
-      }
+      if (values.LoadState === "not-found") return { kind: "absent", host: request.expectedHost, observedAt: observedAt() };
       if (result.exitCode !== 0 || PROPERTIES.some(name => !Object.hasOwn(values, name)) || values.Description !== request.identity.description || values.LoadState !== "loaded"
         || !/^[a-f0-9]{32}$/u.test(values.InvocationID!) || /^0+$/u.test(values.InvocationID!)
         || (request.expectedInvocationId !== undefined && values.InvocationID !== request.expectedInvocationId)) return { kind: "unknown", reason: "unit_identity_mismatch" };
@@ -198,13 +244,56 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
       const number = (name: string, maximum: number): number => { const text = values[name]!; if (!/^(0|[1-9][0-9]*)$/u.test(text)) invalid("snapshot number"); const value = Number(text); integer(value, 0, maximum, "snapshot number"); return value; };
       const controlGroup = values.ControlGroup!;
       if (controlGroup !== "" && controlGroup !== `/system.slice/${request.identity.unitName}`) return { kind: "unknown", reason: "unit_cgroup_mismatch" };
-      let populated: boolean | null = null;
-      if (controlGroup) { try { const value = await cgroupReader(controlGroup); if (typeof value === "boolean") populated = value; } catch { /* Unreadable remains unestablished. */ } }
-      const after = await currentHost(); if (!sameHost(before, after)) return { kind: "unknown", reason: "host_identity_changed" };
-      const snapshot: ServiceSnapshot = { identity: request.identity, host: after, observedAt: observedAt(), invocationId: values.InvocationID!, loadState: values.LoadState!,
+      const snapshot: ServiceSnapshot = { identity: request.identity, host: request.expectedHost, observedAt: observedAt(), invocationId: values.InvocationID!, loadState: values.LoadState!,
         activeState: values.ActiveState!, subState: values.SubState!, result: values.Result!, mainPid: number("MainPID", 0xffff_ffff),
-        execMainCode: number("ExecMainCode", 6), execMainStatus: number("ExecMainStatus", 255), controlGroup, cgroupPopulated: populated };
+        execMainCode: number("ExecMainCode", 6), execMainStatus: number("ExecMainStatus", 255), controlGroup, cgroupPopulated: null };
       return { kind: "present", snapshot };
+  }
+  function terminal(snapshot: ServiceSnapshot): boolean {
+    return snapshot.mainPid === 0 && [1, 2, 3].includes(snapshot.execMainCode)
+      && (snapshot.activeState === "active" && snapshot.subState === "exited"
+        || snapshot.activeState === "failed" && snapshot.subState === "failed"
+        || snapshot.activeState === "inactive" && snapshot.subState === "dead");
+  }
+  function sameTerminal(a: ServiceSnapshot, b: ServiceSnapshot): boolean {
+    return terminal(a) && terminal(b) && a.invocationId === b.invocationId && a.activeState === b.activeState && a.subState === b.subState
+      && a.result === b.result && a.execMainCode === b.execMainCode && a.execMainStatus === b.execMainStatus;
+  }
+  async function query(raw: ServiceQueryRequest, signal: AbortSignal): Promise<ServiceQueryResult> {
+    const request = plainCopy(raw); validateQuery(request);
+    try {
+      if (signal.aborted) return { kind: "unknown", reason: "cancelled" };
+      const before = await currentHost(); if (!sameHost(before, request.expectedHost)) return { kind: "unknown", reason: "host_identity_changed" };
+      let result = await managerSnapshot(request, signal);
+      if (result.kind === "present") {
+        const first = result.snapshot, isTerminal = terminal(first), expectedGroup = `/system.slice/${request.identity.unitName}`;
+        let state: CgroupState = "unknown";
+        if (first.controlGroup || isTerminal) {
+          try { const value = await cgroupReader(expectedGroup); if (["populated", "empty", "absent", "unknown"].includes(value)) state = value; }
+          catch { /* Failed kernel reads are not absence. */ }
+        }
+        if (isTerminal && (state === "empty" || state === "absent")) {
+          const kernelAt = observedAt();
+          const confirmed = await managerSnapshot({ ...request, expectedInvocationId: first.invocationId }, signal);
+          if (confirmed.kind !== "present" || !sameTerminal(first, confirmed.snapshot)) return { kind: "unknown", reason: "terminal_observation_changed" };
+          const after = await currentHost();
+          if (!sameHost(before, after)) return { kind: "unknown", reason: "host_identity_changed" };
+          if (signal.aborted) return { kind: "unknown", reason: "cancelled" };
+          const confirmedAt = observedAt();
+          if (Date.parse(kernelAt) > Date.parse(confirmedAt)) return { kind: "unknown", reason: "observation_clock_changed" };
+          const snapshot = confirmed.snapshot;
+          snapshot.observedAt = confirmedAt; snapshot.cgroupPopulated = false;
+          snapshot.cleanupEvidence = { kind: state === "empty" ? "cgroup_v2_empty" : "cgroup_v2_absent", controlGroup: expectedGroup,
+            invocationId: first.invocationId, observedAt: kernelAt, confirmedAt };
+          return { kind: "present", snapshot };
+        }
+        if (isTerminal && state === "populated") return { kind: "unknown", reason: "terminal_cgroup_populated" };
+        if (!isTerminal && first.controlGroup) first.cgroupPopulated = state === "populated" ? true : state === "empty" ? false : null;
+      }
+      const after = await currentHost(); if (!sameHost(before, after)) return { kind: "unknown", reason: "host_identity_changed" };
+      if (signal.aborted) return { kind: "unknown", reason: "cancelled" };
+      if (result.kind === "present") result.snapshot.observedAt = observedAt();
+      return result;
     } catch { return { kind: "unknown", reason: "query_failed" }; }
   }
   async function start(raw: ServiceLaunchRequest, signal: AbortSignal, authorize: () => boolean): Promise<ServiceStartResult> {
@@ -214,7 +303,7 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
       const l = request.limits, remaining = Date.parse(request.deadlineAt) - now().getTime();
       if (!Number.isFinite(remaining) || remaining < l.runtimeMs + l.startTimeoutMs + l.stopTimeoutMs) return { kind: "unknown", reason: "insufficient_deadline_budget" };
       const args = ["--system", "--no-ask-password", "--quiet", `--unit=${request.identity.unitName}`, `--description=${request.identity.description}`, "--expand-environment=no", "--remain-after-exit",
-        "--property=Type=exec", "--property=ExitType=cgroup", "--property=Restart=no", `--uid=${profile.userId}`, `--gid=${profile.groupId}`,
+        "--property=Type=exec", "--property=ExitType=cgroup", "--property=Restart=no", "--property=Slice=system.slice", `--uid=${profile.userId}`, `--gid=${profile.groupId}`,
         `--working-directory=${request.command.cwd}`, `--property=RuntimeMaxSec=${l.runtimeMs}ms`, `--property=TimeoutStartSec=${l.startTimeoutMs}ms`,
         // v255 rejects transient JobTimeoutUSec despite parsing JobTimeoutSec.
         // TimeoutStartSec bounds activation, not time queued in the manager.

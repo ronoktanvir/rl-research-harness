@@ -55,7 +55,17 @@ function observedState(value: ServiceQueryResult): object {
   const s = value.snapshot;
   return { kind: "present", activeState: s.activeState, subState: s.subState, result: s.result,
     mainPid: s.mainPid, execMainCode: s.execMainCode, execMainStatus: s.execMainStatus,
-    controlGroup: s.controlGroup, cgroupPopulated: s.cgroupPopulated };
+    controlGroup: s.controlGroup, cgroupPopulated: s.cgroupPopulated, cleanupEvidence: s.cleanupEvidence ?? null };
+}
+function assertCleanupEvidence(value: ServiceSnapshot, fixture: Fixture): void {
+  assert.equal(value.mainPid, 0);
+  assert.equal(value.cgroupPopulated, false, "Production transport must establish cleanup, not just the fixture reader");
+  assert.ok(value.cleanupEvidence, "Terminal evidence must survive manager cgroup-path removal");
+  assert.ok(["cgroup_v2_empty", "cgroup_v2_absent"].includes(value.cleanupEvidence.kind));
+  assert.equal(value.cleanupEvidence.controlGroup, `/system.slice/${fixture.declaration.request.identity.unitName}`);
+  assert.equal(value.cleanupEvidence.invocationId, value.invocationId);
+  assert.ok(Date.parse(value.cleanupEvidence.observedAt) <= Date.parse(value.cleanupEvidence.confirmedAt));
+  assert.ok(Date.parse(value.cleanupEvidence.confirmedAt) <= Date.parse(value.observedAt));
 }
 async function fixtureStatus(unitName: string): Promise<string> {
   assert.match(unitName, /^rlh-[a-f0-9]{64}\.service$/u);
@@ -207,6 +217,7 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
       const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true);
       assert.equal(start.kind, "accepted", `Start outcome: ${JSON.stringify(start)}`);
       const ended = await snapshot(fixture, value => value.subState === "exited" && value.execMainCode === 1);
+      assertCleanupEvidence(ended, fixture);
       t.diagnostic(`Successful terminal transport state: ${JSON.stringify(observedState({ kind: "present", snapshot: ended }))}`);
       assert.equal(ended.activeState, "active"); assert.equal(ended.result, "success"); assert.equal(ended.execMainStatus, 0);
       const starts = (await fixture.events()).filter(event => event.event === "started");
@@ -220,6 +231,7 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
       const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true);
       assert.equal(start.kind, "accepted", `Start outcome: ${JSON.stringify(start)}`);
       const ended = await snapshot(fixture, value => value.activeState === "failed");
+      assertCleanupEvidence(ended, fixture);
       t.diagnostic(`Nonzero terminal transport state: ${JSON.stringify(observedState({ kind: "present", snapshot: ended }))}`);
       assert.equal(ended.result, "exit-code"); assert.equal(ended.execMainCode, 1); assert.equal(ended.execMainStatus, 23);
       await assertEnded(fixture, (await fixture.events()).filter(event => event.event === "started"));
@@ -233,6 +245,7 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
       const running = await snapshot(fixture, value => value.activeState === "active" && value.cgroupPopulated === true);
       assert.ok(running.mainPid > 0);
       const ended = await snapshot(fixture, value => value.activeState === "failed");
+      assertCleanupEvidence(ended, fixture);
       t.diagnostic(`Runtime terminal transport state: ${JSON.stringify(observedState({ kind: "present", snapshot: ended }))}`);
       assert.equal(ended.invocationId, running.invocationId); assert.equal(ended.result, "timeout");
       const rows = await fixture.events();
@@ -253,6 +266,8 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
         expectedInvocationId: running.invocationId }, AbortSignal.timeout(4_000));
       t.diagnostic(`Stop transport state: ${JSON.stringify({ command: stopped.command, observation: observedState(stopped.observation) })}`);
       assert.equal(stopped.command, "sent");
+      assert.equal(stopped.observation.kind, "present");
+      if (stopped.observation.kind === "present") assertCleanupEvidence(stopped.observation.snapshot, fixture);
       await assertEnded(fixture, starts);
       const ignored = new Set((await fixture.events()).filter(event => event.event === "ignored_sigterm").map(event => event.pid));
       for (const process of starts) assert.ok(ignored.has(process.pid), "Both processes must demonstrate ignored SIGTERM");
@@ -293,6 +308,13 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
         assert.equal(starts.length, 1);
         const cancelled = await reopened.cancel(fixture.declaration.jobId, AbortSignal.timeout(4_000));
         t.diagnostic(`Worker cancel classification: ${JSON.stringify({ acceptance: cancelled.acceptance, execution: cancelled.execution, reason: cancelled.reason, observation: cancelled.observation ? observedState(cancelled.observation) : null })}`);
+        assert.equal(cancelled.execution, "failed", "Forced shutdown preserves the manager's timeout result with confirmed cleanup");
+        assert.equal(cancelled.observation?.kind, "present");
+        if (cancelled.observation?.kind === "present") assertCleanupEvidence(cancelled.observation.snapshot, fixture);
+        journal.close(); journal = openJobJournal({ path: fixture.journalPath });
+        const afterCleanup = createSupervisedWorker({ journal, transport, workerId: "linux-ci-fixture", authorize: () => false, callTimeoutMs: 4_000 });
+        assert.equal((await afterCleanup.query(fixture.declaration.jobId, AbortSignal.timeout(4_000))).execution, "failed");
+        assert.equal(startCalls, 1);
         await assertEnded(fixture, starts);
         assert.equal((await fixture.events()).filter(event => event.event === "started").length, 1);
       } finally { journal.close(); }

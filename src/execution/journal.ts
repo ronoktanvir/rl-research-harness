@@ -160,7 +160,9 @@ function match(value: unknown, expected: unknown, label: string): void {
   if (encode(value) !== encode(expected)) fail("conflict", `${label} does not match the job declaration`);
 }
 function serviceSnapshot(raw: unknown, job: JobDeclaration): asserts raw is ServiceSnapshot {
-  keys(raw, ["identity", "host", "observedAt", "invocationId", "loadState", "activeState", "subState", "result", "mainPid", "execMainCode", "execMainStatus", "controlGroup", "cgroupPopulated"]);
+  object(raw);
+  keys(raw, ["identity", "host", "observedAt", "invocationId", "loadState", "activeState", "subState", "result", "mainPid", "execMainCode", "execMainStatus", "controlGroup", "cgroupPopulated",
+    ...(Object.hasOwn(raw, "cleanupEvidence") ? ["cleanupEvidence"] : [])]);
   unit(raw.identity); host(raw.host); match(raw.identity, job.request.identity, "Unit identity"); match(raw.host, job.request.expectedHost, "Host identity");
   timestamp(raw.observedAt);
   invocationId(raw.invocationId);
@@ -172,7 +174,24 @@ function serviceSnapshot(raw: unknown, job: JobDeclaration): asserts raw is Serv
   if (raw.mainPid > 0xffff_ffff || raw.execMainCode > 6 || raw.execMainStatus > 255) fail("invalid", "Invalid service process outcome");
   if (raw.cgroupPopulated !== null && typeof raw.cgroupPopulated !== "boolean") fail("invalid", "Invalid cgroup observation");
   const expectedGroup = `/system.slice/${job.request.identity.unitName}`;
-  if ((raw.controlGroup !== "" && raw.controlGroup !== expectedGroup) || (raw.cgroupPopulated !== null && raw.controlGroup !== expectedGroup)) fail("invalid", "Cgroup population requires the declared unit's cgroup path");
+  if (raw.controlGroup !== "" && raw.controlGroup !== expectedGroup) fail("invalid", "Cgroup path must match the declared unit");
+  if (Object.hasOwn(raw, "cleanupEvidence")) {
+    const proof = raw.cleanupEvidence;
+    keys(proof, ["kind", "controlGroup", "invocationId", "observedAt", "confirmedAt"]);
+    choice(proof.kind, ["cgroup_v2_empty", "cgroup_v2_absent"]);
+    match(proof.controlGroup, expectedGroup, "Cleanup cgroup");
+    invocationId(proof.invocationId); match(proof.invocationId, raw.invocationId, "Cleanup invocation");
+    timestamp(proof.observedAt); timestamp(proof.confirmedAt);
+    if (Date.parse(proof.observedAt) > Date.parse(proof.confirmedAt) || Date.parse(proof.confirmedAt) > Date.parse(raw.observedAt)) fail("invalid", "Cleanup evidence timestamps are out of order");
+    const terminal = raw.activeState === "active" && raw.subState === "exited"
+      || raw.activeState === "failed" && raw.subState === "failed"
+      || raw.activeState === "inactive" && raw.subState === "dead";
+    if (!terminal || raw.mainPid !== 0 || ![1, 2, 3].includes(raw.execMainCode) || raw.cgroupPopulated !== false) fail("invalid", "Cleanup evidence requires a terminal process and an empty cgroup");
+  }
+  // A terminal manager may clear its path after the kernel removes the cgroup.
+  // Only a separately identity-bound kernel proof can establish cleanup then.
+  if (raw.cgroupPopulated !== null && raw.controlGroup !== expectedGroup
+    && !(raw.cgroupPopulated === false && Object.hasOwn(raw, "cleanupEvidence"))) fail("invalid", "Cgroup population requires its path or validated cleanup evidence");
 }
 function query(raw: unknown, job: JobDeclaration): asserts raw is ServiceQueryResult {
   object(raw); choice(raw.kind, ["present", "absent", "unknown"]);

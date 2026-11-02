@@ -42,6 +42,15 @@ export interface ServiceQueryRequest {
   /** Once observed, a replacement invocation must not be mistaken for this job. */
   expectedInvocationId?: string;
 }
+export interface ServiceCleanupEvidence {
+  kind: "cgroup_v2_empty" | "cgroup_v2_absent";
+  /** Exact owned path inspected in the host cgroup2 hierarchy, not a manager field. */
+  controlGroup: string;
+  invocationId: string;
+  /** Kernel observation, bracketed by matching loaded terminal manager snapshots. */
+  observedAt: string;
+  confirmedAt: string;
+}
 export interface ServiceSnapshot {
   identity: UnitIdentity;
   host: HostIdentity;
@@ -57,6 +66,8 @@ export interface ServiceSnapshot {
   controlGroup: string;
   /** null means not established; absence of a MainPID is insufficient. */
   cgroupPopulated: boolean | null;
+  /** Optional for historical snapshots. Native terminal cleanup now carries this proof. */
+  cleanupEvidence?: ServiceCleanupEvidence;
 }
 export type ServiceQueryResult =
   | { kind: "present"; snapshot: ServiceSnapshot }
