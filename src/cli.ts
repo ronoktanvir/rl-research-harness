@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { inspectCoworkerProject, inspectCoworkerRun } from "./integrations/coworker/index.ts";
 import { captureCoworkerReport } from "./integrations/coworker/capture.ts";
+import { archiveCoworkerAssessment } from "./integrations/coworker/assessment.ts";
 import { prepareCoworkerAttempt } from "./integrations/coworker/attempt-plan.ts";
 import { LedgerError, openExperimentLedger } from "./ledger/index.ts";
 import type { ExperimentLedger, ScopeState } from "./ledger/index.ts";
@@ -22,6 +23,7 @@ Read-only inspection (no model calls, no training):
 
 Persistent observations and local controller administration (no training):
   npm run harness -- capture <ledger.sqlite> <project-id> <capture-id> <CoworkeRL directory> <relative/report.json>
+  npm run harness -- coworker-assess <ledger.sqlite> <project-id> <capture-id>
   npm run harness -- ledger-status <ledger.sqlite> <project-id>
   npm run harness -- ledger-export <ledger.sqlite> <project-id> <output-directory>
   npm run harness -- ledger-stop <ledger.sqlite> <global|project:ID> <reason>
@@ -36,6 +38,8 @@ proposal revisions. It saves JSON/Markdown decisions; it cannot launch training.
 smoke makes one short, tool-suppressed client call. API fallback is not configured.
 coworker-plan validates declarations and prints a fixed command preview. It does not
 read the trainer's files, run preflight, admit a job, or launch training.
+coworker-assess archives deterministic diagnostics and evidence requests from an
+existing capture. It makes no model calls and cannot intervene in training.
 Ledger commands take exclusive local ownership and recover abandoned dispatches as
 unknown. They cannot attach to a running controller or confirm remote cancellation.
 
@@ -81,6 +85,17 @@ export async function main(args: string[]): Promise<number> {
       print({ eventId: observation.eventId, digest: observation.digest, observedAt: observation.observedAt,
         projectId: observation.projectId, runId: observation.runId, source: observation.source,
         originalRun: observation.payload.originalRun });
+      return 0;
+    } finally { ledger.close(); }
+  }
+  if (command === "coworker-assess" && rest.length === 3) {
+    const ledger = openExperimentLedger({ path: rest[0]! });
+    try {
+      const capture = ledger.getObservation(rest[2]!);
+      if (!capture) throw new Error("Capture not found in the selected ledger");
+      const assessment = archiveCoworkerAssessment(ledger, { projectId: rest[1]!, captureId: capture.eventId, captureDigest: capture.digest });
+      print({ eventId: assessment.eventId, digest: assessment.digest, projectId: assessment.projectId,
+        observedAt: assessment.observedAt, assessment: assessment.payload });
       return 0;
     } finally { ledger.close(); }
   }
