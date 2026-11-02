@@ -2,7 +2,7 @@
 
 A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
-The current code provides subscription-backed reviewers, structured councils, a qualified Pi runtime adapter, an experiment ledger with durable dispatch records, and read-only CoworkerRL capture. Real training backends, a persistent campaign controller and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for the full scope.
+The current code provides subscription-backed reviewers, structured councils, a qualified Pi runtime adapter, an experiment ledger with durable dispatch records, read-only CoworkerRL capture, and a persistent local research-task queue. Initial report reviews survive restarts as individually stored tasks. Real training backends, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for the full scope.
 
 ## Run locally
 
@@ -39,6 +39,8 @@ npm run harness -- review packet.json codex .harness/decisions
 
 Each smoke command makes one short model call. The review command performs independent methods, systems and adversarial reviews, with up to two proposal revisions, then saves JSON/Markdown decisions. It uses the selected official client's account authentication and does not silently switch to paid APIs. See [subscription workers](docs/subscription-workers.md) for allowance/billing distinctions, tested versions and limits.
 
+For persisted tasks and invocation caps, configure the [local controller](docs/local-controller.md), then use `report-review-prepare`, `queue-run` and `report-review-aggregate`. The queue stores each review separately, holds clients that report quota/authentication problems, and leaves interrupted calls uncertain. Its caps count official-client invocations, not provider requests or charges. The standalone `review` command above is separate and does not use these queue caps.
+
 A council's approval means its review protocol completed; it does not certify scientific validity. Unknown checks, malformed reviewers and unresolved material validity objections block approval. Model revisions cannot invent new evidence or check results. The [council API](docs/council-implementation.md) documents the evidence schema and callable interfaces.
 
 ## Code map
@@ -51,6 +53,7 @@ A council's approval means its review protocol completed; it does not certify sc
 | `src/runtime/` | Optional pinned Pi runtime with persistent conversations and injected models/tools |
 | `src/ledger/` | Authoritative manifests, runs, reservations, dispatch identities, observations, accounting and stop barriers |
 | `src/controller/` | Single-submission/reconciliation coordinator and ledger-derived project summaries |
+| `src/scheduler/` | Persistent tasks, invocation admission, account holds, bounded local runner and archived-report review plans |
 | `src/integrations/coworker/` | CoworkerRL references/metrics and descriptor-relative confined file reader |
 | `test/` | Offline tests, real process-interruption tests and adversarial input cases |
 

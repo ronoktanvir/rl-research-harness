@@ -1,0 +1,15 @@
+# Independent review of persistent research tasks
+
+The queue, task handlers and report-review workflow were implemented by separate agents. Other agents examined the contracts and added independent adversarial tests; the orchestrator implemented configuration/command wiring and integrated the changes. The findings below describe defects and corrections rather than treating the number of reviewers as evidence of correctness.
+
+| Finding | Consequence | Correction and evidence |
+|---|---|---|
+| Runner cleanup reread a caller-owned signal option after execution began | Caller mutation could detach cleanup from the original cancellation signal | Capture the signal and worker identity once; an independent mutation regression checks cleanup against the original signal. |
+| Some generic official-client failures did not establish whether a request had run | Treating every failure as safely finished could release a concurrency slot after ambiguous work | Preserve client status but classify ambiguous completion as uncertain. Known spawn/auth-preflight failures remain distinct. Handler and runner regressions retain uncertain slots and discard late callbacks. |
+| JSON input opened a FIFO before checking that it was a regular file | The controller could block indefinitely before reaching bounded-read validation | Open nonblocking, then inspect the descriptor. A subprocess regression uses a named pipe with a deadline. |
+| Report-review validation rejected uppercase checkpoint SHA hex already accepted by the capture parser | A valid archived report could fail preparation | Preserve producer spelling and accept case-insensitive hex. An independent real-capture regression verifies compatibility. |
+| Prefix diagnostic sampling could omit a severe middle-step failure after many warnings | A reviewer could receive evidence with every trace of that failure removed | Count every diagnostic by code/severity and prioritize severe bounded examples. An independent fixture places the error outside both the early diagnostic prefix and selected metric steps. |
+
+Additional tests exercise actual process death before/after claim commit, database-owner exclusion, transactional rollback, unchanged consumed units after reopening, stop epochs, account holds shared across projects, explicit quota resumption, captured handler/task identity, partial plan-enqueue recovery, invalid cached provenance and unknown scientific-check blockers. A subprocess signal test uses a fake client and verifies that SIGTERM persists the stop barrier, leaves the active task uncertain and never invokes its queued sibling. Offline tests make no provider calls.
+
+The review found no remaining material defect within the implemented local evidence-audit scope. It does not qualify hosted authentication, automatic quota-reset discovery, remote execution fencing, durable criticism rounds, literature retrieval, training control or scientific usefulness. See [implementation status](../implementation-status.md) for current validation and remaining requirements.

@@ -1,6 +1,6 @@
 # Subscription-backed workers
 
-Status: implemented for bounded evidence-only reviews through the official local clients. Both clients completed a one-message live smoke test on 2026-11-01 using the account authentication present on this machine. This does not verify unattended server operation, quota-reset scheduling or paid training.
+Status: implemented for bounded evidence-only reviews through the official local clients. Both clients completed live smoke tests and a persisted report-review invocation using this machine's account authentication. The latter produced a valid Codex review and malformed Claude review text; see [live qualification](live-report-review.md). Authentication success does not establish structured-output reliability, unattended server operation or quota-reset scheduling.
 
 ## Account access and API access are different
 
@@ -20,7 +20,7 @@ The reviewer runs in a fresh temporary directory, receives the evidence in stdin
 
 The wrapper requires a successful terminal protocol result. Partial text, malformed output, failed turns, timeouts, missing authentication and usage limits are distinct failures. It bounds output and wall time, terminates the process group on Unix, and preserves escalation after the immediate child exits. Processes that deliberately escape their group and Windows descendant termination remain outside this qualification; server worker isolation still needs a separate boundary.
 
-The wrapper records token counts when reported. It deliberately does not convert a client's cost estimate into a subscription invoice. There is no automatic retry, account rotation or switch to paid APIs. Scheduling a retry after a quota reset remains future controller work; the current council records a blocked reviewer.
+The wrapper records token counts when reported. It deliberately does not convert a client's cost estimate into a subscription invoice. There is no automatic retry, account rotation or switch to paid APIs. The persistent [task queue](task-queue.md) now records shared quota/authentication holds and permits explicit evidence-backed release/resume. Automatic reset discovery remains future work; the standalone council records a blocked reviewer.
 
 ## Commands
 
@@ -40,4 +40,4 @@ The bounded reviser can modify proposal text only. It cannot invent new evidence
 
 Local smoke tests used Codex CLI 0.156.1 and Claude Code 2.1.281 on macOS with Node 25.9.0. Client flags and event formats can change; repeat qualification before upgrading or deploying on a Droplet. The automated suite checks parsing, API-auth rejection, environment separation, quota behavior, deadlines, descendant cleanup and council wiring. CI does not log in to either service.
 
-Pending: a persistent work queue, usage-reset scheduling, crash reconciliation for an interrupted client invocation, controller-wide stop and concurrency limits, permission-scoped coding workers, and server authentication setup. Pi remains an optional runtime backend for injected providers; its conversation recovery does not automatically apply to these separate CLI processes.
+The local [controller](local-controller.md) supplies a persistent queue, cumulative invocation caps, concurrency limits and ledger stop checks. Restart preserves interrupted calls as uncertain; it cannot retrieve an official client's lost result or safely repeat it automatically. Pending work includes structured-output reliability, usage-reset discovery, durable criticism/revision orchestration, permission-scoped coding workers, remote enforcement and server authentication. Pi remains an optional runtime backend for injected providers; its conversation recovery does not automatically apply to these separate CLI processes.
