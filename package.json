@@ -4,7 +4,9 @@
   "private": true,
   "description": "Evidence-grounded research orchestration with durable experiment records",
   "type": "module",
-  "engines": { "node": ">=24.12.0 <26" },
+  "engines": {
+    "node": ">=24.12.0 <26"
+  },
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --import tsx --test test/**/*.test.ts",
@@ -13,7 +15,8 @@
   "dependencies": {
     "@earendil-works/chord": "1.4.0",
     "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/pi-durable": "1.4.0"
+    "@earendil-works/pi-durable": "1.4.0",
+    "saxes": "6.0.0"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
