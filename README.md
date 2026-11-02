@@ -2,7 +2,7 @@
 
 A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
-The current code provides subscription-backed reviewers, structured councils, a qualified Pi runtime adapter, an experiment ledger with durable dispatch records, read-only CoworkerRL capture, and a persistent local research-task queue. Initial report reviews survive restarts as individually stored tasks. Real training backends, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for the full scope.
+The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger with dispatch records, read-only CoworkerRL capture, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training backends, full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
 
 ## Run locally
 
@@ -41,6 +41,8 @@ Each smoke command makes one short model call. The review command performs indep
 
 For persisted tasks and invocation caps, configure the [local controller](docs/local-controller.md), then use `report-review-prepare`, `queue-run` and `report-review-aggregate`. The queue stores each review separately, holds clients that report quota/authentication problems, and leaves interrupted calls uncertain. Its caps count official-client invocations, not provider requests or charges. The standalone `review` command above is separate and does not use these queue caps.
 
+For complete persisted criticism rounds, use `council-prepare` and `council-run`; the [durable council guide](docs/durable-council.md) explains recovery and evidence constraints. Official clients now receive explicit [output schemas](docs/structured-output.md), with scientific validation still performed independently by the controller. [Literature discovery](docs/literature-discovery.md) constructs source-linked evidence from captured arXiv responses while preserving unknown full-paper and venue checks.
+
 A council's approval means its review protocol completed; it does not certify scientific validity. Unknown checks, malformed reviewers and unresolved material validity objections block approval. Model revisions cannot invent new evidence or check results. The [council API](docs/council-implementation.md) documents the evidence schema and callable interfaces.
 
 ## Code map
@@ -54,6 +56,7 @@ A council's approval means its review protocol completed; it does not certify sc
 | `src/ledger/` | Authoritative manifests, runs, reservations, dispatch identities, observations, accounting and stop barriers |
 | `src/controller/` | Single-submission/reconciliation coordinator and ledger-derived project summaries |
 | `src/scheduler/` | Persistent tasks, invocation admission, account holds, bounded local runner and archived-report review plans |
+| `src/literature/` | Bounded arXiv queries, strict Atom parsing, captured response provenance and abstract-scoped evidence packets |
 | `src/integrations/coworker/` | CoworkerRL references/metrics and descriptor-relative confined file reader |
 | `test/` | Offline tests, real process-interruption tests and adversarial input cases |
 
