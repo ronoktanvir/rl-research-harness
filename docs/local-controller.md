@@ -34,7 +34,13 @@ npm run harness -- report-review-aggregate /private/controller.json PLAN_OBSERVA
 
 Preparation archives the request, evidence packet, reviewer assignments and task identities before enqueueing reviewer work. Repeating the identical preparation repairs missing enqueues after an interruption without replacing completed reviews. Aggregation reads the authoritative archived plan and stored reviews, makes no new model calls, and writes an immutable JSON/Markdown decision bundle. A pending result exits 2. A completed aggregation exits 0 even when scientific readiness is blocked: artifact publication and scientific approval are different outcomes.
 
-The request shape and provenance checks are documented in [report-review.md](report-review.md). This workflow preserves initial independent reviewers. Durable criticism and revision rounds remain to be implemented; the existing separate `review` command still runs its whole council in memory and does not use this queue's invocation allowance.
+The request shape and provenance checks are documented in [report-review.md](report-review.md). This workflow preserves initial independent reviewers. For persisted criticism and revision rounds, use the [durable council commands](durable-council.md). The separate `review` command still runs its whole council in memory and does not use this queue's invocation allowance.
+
+## Retrieve bounded literature evidence
+
+`literature-discover <config> <request.json>` makes a bounded arXiv API retrieval under explicit project/global stop authority and archives its query, response bytes and derived metadata. `literature-packet <config> <query-observation-id> <request.json> <output.json>` builds an evidence packet from the saved response without network access. It publishes a complete file exclusively, reuses identical output and refuses to overwrite different content. See [literature discovery](literature-discovery.md) for request shapes, limits and rate coordination. A packet's abstract-only scope and unknown full-paper/venue/novelty checks remain visible to critics.
+
+`literature-status <config>` verifies captured service responses and repairs missing derived holds. `literature-release <config> <request.json>` records an explicit operator release with evidence. Unknown arXiv reset times remain held; changing project or query identity cannot bypass the hold. A known future retry time cannot be overridden by early release. These administrative commands make no network request and do not re-run a failed discovery.
 
 ## Resolve a quota or authentication wait
 

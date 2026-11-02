@@ -1,11 +1,19 @@
 import { randomUUID } from "node:crypto";
+import { link, mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { loadHarnessConfig, openConfiguredHarness, readBoundedJson } from "./config.ts";
-import { enqueueResearchTask, runNextResearchTask } from "./runner.ts";
+import { enqueueResearchTask, ledgerAuthority, runNextResearchTask } from "./runner.ts";
 import { aggregateReportReviews, loadReportReviewPlan, prepareReportReviews } from "./report-review.ts";
 import { writeDecisionArtifacts } from "../research/artifacts.ts";
 import type { ReportReviewRequest } from "./report-review.ts";
 import type { ConfiguredHarness } from "./config.ts";
 import type { EnqueueTaskInput, ReleaseResourceInput, ResumeTaskInput } from "./types.ts";
+import { advanceCouncilCampaign, prepareCouncilCampaign, runCouncilCampaign } from "./council-workflow.ts";
+import { loadCouncilPlan } from "./council-contracts.ts";
+import type { CouncilPlanRequest } from "./council-contracts.ts";
+import { buildLiteratureEvidencePacket, discoverArxiv, getArxivAvailability, releaseArxivHold } from "../literature/index.ts";
+import type { ArxivDiscoveryRequest, LiteraturePacketRequest, ReleaseArxivHoldRequest } from "../literature/types.ts";
+import { hash } from "../ledger/validation.ts";
 
 export const QUEUE_USAGE = `Persistent research tasks (configured official-client invocation limits apply):
   npm run harness -- queue-status <config.json>
@@ -16,6 +24,13 @@ export const QUEUE_USAGE = `Persistent research tasks (configured official-clien
   npm run harness -- queue-release-resource <config.json> <release-request.json>
   npm run harness -- report-review-prepare <config.json> <request.json>
   npm run harness -- report-review-aggregate <config.json> <plan-observation-id> <output-directory>
+  npm run harness -- council-prepare <config.json> <request.json>
+  npm run harness -- council-advance <config.json> <plan-observation-id>
+  npm run harness -- council-run <config.json> <plan-observation-id> <maximum-tasks> <output-directory>
+  npm run harness -- literature-discover <config.json> <request.json>
+  npm run harness -- literature-packet <config.json> <query-observation-id> <request.json> <output.json>
+  npm run harness -- literature-status <config.json>
+  npm run harness -- literature-release <config.json> <release-request.json>
 
 queue-run drains currently eligible work up to its bound. It does not spin while
 waiting for quota/authentication or repeat interrupted calls. SIGINT/SIGTERM writes
@@ -23,6 +38,45 @@ the ledger stop barrier before asking active work to cancel. There is no TCP ser
 `;
 
 const output = (value: unknown) => console.log(JSON.stringify(value, null, 2));
+
+function maximum(value: string): number {
+  const number = Number(value);
+  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(number) || number > 1000) throw new Error("maximum-tasks must be an integer from 1 to 1,000");
+  return number;
+}
+function configuredProject(harness: ConfiguredHarness, projectId: string): void {
+  if (!Object.hasOwn(harness.config.projects, projectId)) throw new Error("Project has no trusted controller configuration");
+}
+function runnerSignal(harness: ConfiguredHarness) {
+  const abort = new AbortController();
+  let stopPersisted: boolean | null = null;
+  const stop = () => {
+    try {
+      const global = harness.ledger.getScope("global");
+      harness.ledger.stopScope({ scopeId: "global", expectedEpoch: global.epoch, reason: "Operator interrupted the research runner" });
+      stopPersisted = true;
+    } catch { stopPersisted = false; }
+    finally { abort.abort(); }
+  };
+  process.once("SIGINT", stop); process.once("SIGTERM", stop);
+  return { signal: abort.signal, status: () => stopPersisted,
+    close() { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); } };
+}
+
+async function savePacket(path: string, packet: unknown): Promise<string> {
+  const destination = resolve(path);
+  await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+  const temporary = join(dirname(destination), `.packet-${randomUUID()}`);
+  try {
+    await writeFile(temporary, `${JSON.stringify(packet, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    try { await link(temporary, destination); }
+    catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")
+        || hash(await readBoundedJson(destination, 2_000_000)) !== hash(packet)) throw error;
+    }
+  } finally { await rm(temporary, { force: true }); }
+  return destination;
+}
 
 function summary(harness: ConfiguredHarness) {
   const tasks = harness.queue.listTasks();
@@ -39,13 +93,60 @@ export async function queueCommand(args: string[]): Promise<number | null> {
   const [command, ...rest] = args;
   const arity: Record<string, number> = { "queue-status": 1, "queue-enqueue": 2, "queue-run": 2,
     "queue-cancel": 3, "queue-resume": 2, "queue-release-resource": 2,
-    "report-review-prepare": 2, "report-review-aggregate": 3 };
+    "report-review-prepare": 2, "report-review-aggregate": 3,
+    "council-prepare": 2, "council-advance": 2, "council-run": 4,
+    "literature-discover": 2, "literature-packet": 4, "literature-status": 1, "literature-release": 2 };
   if (!command || !Object.hasOwn(arity, command)) return null;
   if (rest.length !== arity[command]) throw new Error(`Invalid research queue arguments.\n${QUEUE_USAGE}`);
   const config = await loadHarnessConfig(rest[0]!);
   const harness = openConfiguredHarness(config);
   try {
     if (command === "queue-status") { output(summary(harness)); return 0; }
+    if (command === "literature-status") { output(getArxivAvailability(harness.ledger)); return 0; }
+    if (command === "literature-release") {
+      const released = releaseArxivHold(harness.ledger, await readBoundedJson(rest[1]!) as ReleaseArxivHoldRequest);
+      output({ releaseObservationId: released.eventId, availability: getArxivAvailability(harness.ledger) }); return 0;
+    }
+    if (command === "council-prepare") {
+      const request = await readBoundedJson(rest[1]!) as CouncilPlanRequest;
+      configuredProject(harness, request.projectId);
+      const plan = prepareCouncilCampaign(harness.ledger, request);
+      output({ planObservationId: plan.planObservationId, planDigest: plan.planDigest,
+        progress: await advanceCouncilCampaign(harness.ledger, harness.queue, harness.handlers, plan.planObservationId) }); return 0;
+    }
+    if (command === "council-advance" || command === "council-run") {
+      const plan = loadCouncilPlan(harness.ledger, rest[1]!);
+      configuredProject(harness, plan.request.projectId);
+      if (command === "council-advance") {
+        const progress = await advanceCouncilCampaign(harness.ledger, harness.queue, harness.handlers, plan.planObservationId);
+        output(progress); return progress.status === "complete" ? 0 : 2;
+      }
+      const maximumTasks = maximum(rest[2]!);
+      const control = runnerSignal(harness);
+      try {
+        const result = await runCouncilCampaign(harness.ledger, harness.queue, harness.handlers, plan.planObservationId,
+          maximumTasks, { workerId: config.workerId, signal: control.signal });
+        const artifacts = result.progress.status === "complete" ? await writeDecisionArtifacts(rest[3]!, result.progress.decision) : null;
+        output({ ...result, stopPersisted: control.status(), artifacts });
+        if (control.status() === false) return 1;
+        return result.progress.status === "complete" ? 0 : 2;
+      } finally { control.close(); }
+    }
+    if (command === "literature-discover") {
+      const request = await readBoundedJson(rest[1]!) as ArxivDiscoveryRequest;
+      configuredProject(harness, request.projectId);
+      if (ledgerAuthority(harness.ledger, request.projectId).stopped) throw new Error("Literature retrieval is stopped by controller authority");
+      const control = runnerSignal(harness);
+      try {
+        const discovery = await discoverArxiv(harness.ledger, request, { signal: control.signal });
+        output(discovery);
+        return control.status() === false ? 1 : discovery.status === "complete" ? 0 : 2;
+      } finally { control.close(); }
+    }
+    if (command === "literature-packet") {
+      const packet = buildLiteratureEvidencePacket(harness.ledger, rest[1]!, await readBoundedJson(rest[2]!) as LiteraturePacketRequest);
+      output({ path: await savePacket(rest[3]!, packet), packetDigest: packet.digest, evidenceCount: packet.evidence.length }); return 0;
+    }
     if (command === "report-review-prepare") {
       const plan = prepareReportReviews(harness.ledger, harness.queue, harness.handlers,
         await readBoundedJson(rest[1]!) as ReportReviewRequest);
@@ -75,32 +176,19 @@ export async function queueCommand(args: string[]): Promise<number | null> {
     if (command === "queue-release-resource") {
       output(harness.queue.releaseResource(await readBoundedJson(rest[1]!) as ReleaseResourceInput)); return 0;
     }
-    const maximumTasks = Number(rest[1]);
-    if (!/^[1-9][0-9]*$/.test(rest[1]!) || !Number.isSafeInteger(maximumTasks) || maximumTasks > 1000) {
-      throw new Error("maximum-tasks must be an integer from 1 to 1,000");
-    }
-    const abort = new AbortController();
-    let stopPersisted: boolean | null = null;
-    const stop = () => {
-      try {
-        const global = harness.ledger.getScope("global");
-        harness.ledger.stopScope({ scopeId: "global", expectedEpoch: global.epoch, reason: "Operator interrupted the research runner" });
-        stopPersisted = true;
-      } catch { stopPersisted = false; }
-      finally { abort.abort(); }
-    };
-    process.once("SIGINT", stop); process.once("SIGTERM", stop);
+    const maximumTasks = maximum(rest[1]!);
+    const control = runnerSignal(harness);
     const executed: { taskId: string; state: string }[] = [];
     try {
-      for (let index = 0; index < maximumTasks && !abort.signal.aborted; index++) {
-        const task = await runNextResearchTask(harness.queue, harness.handlers, { workerId: config.workerId, signal: abort.signal });
+      for (let index = 0; index < maximumTasks && !control.signal.aborted; index++) {
+        const task = await runNextResearchTask(harness.queue, harness.handlers, { workerId: config.workerId, signal: control.signal });
         if (!task) break;
         executed.push({ taskId: task.taskId, state: task.state });
       }
-    } finally { process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop); }
+    } finally { control.close(); }
     const status = summary(harness);
-    output({ executed, stopPersisted, ...status });
-    if (stopPersisted === false) return 1;
+    output({ executed, stopPersisted: control.status(), ...status });
+    if (control.status() === false) return 1;
     return Object.entries(status.states).some(([state, count]) => count && state !== "completed") ? 2 : 0;
   } finally { harness.close(); }
 }

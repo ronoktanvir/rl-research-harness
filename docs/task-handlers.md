@@ -39,7 +39,7 @@ Only round zero is supported. The handler constructs empty prior-review and obje
 
 A valid reviewer recommendation of `reject`, `revise` or `abstain` completes the review task. It remains a negative scientific finding in `reviewOutcome`; successful execution does not mean approval. Missing or malformed review JSON is a failed review task, even if the official client reported successful execution. The result retains client status/usage metadata and the response byte count/hash. A valid structured review is retained; oversized responses above 1,000,000 bytes are rejected rather than stored partially. Malformed output retains its total validation-issue count and at most 64 issue excerpts, each bounded to 2,048 characters, so diagnostic expansion cannot prevent durable failure recording.
 
-The existing in-memory council still supplies bounded criticism/revision rounds, but those rounds are not made durable by these handlers. A future orchestrator must persist each critic and revision step, verify previous-round evidence, and resume completed work without repeating all client invocations. Initial independent reviews can be assembled from stored results without further model calls.
+These original handlers remain round-zero contracts. The separate [durable council](durable-council.md) now persists critic and revision steps through archived stage handlers, verifies previous-round bindings, and resumes completed work. The standalone in-memory council remains available; running it does not gain the queue's recovery or invocation caps.
 
 ## Failure and availability evidence
 
@@ -66,4 +66,4 @@ Project export delegates to the existing [project-state publisher](project-state
 
 Offline tests inject client executors and use a temporary real ledger for capture/export. They cover fixed backend/model behavior, preserved negative findings, missing/malformed reviews, quota/auth holds without invented times, ambiguous completion, cancellation, metadata bypass attempts, unconfigured projects, forbidden task-controlled paths, configuration/caller mutation and stable capture recovery. No live client calls or training are performed by these tests.
 
-The handler API does not implement automatic source retrieval, novelty assessment, durable revision orchestration, quota-reset discovery, remote worker enforcement or scientific qualification. Those remain separate controller and evaluation work.
+This handler API does not itself implement source retrieval, novelty assessment, revision orchestration, quota-reset discovery, remote worker enforcement or scientific qualification. The new durable workflow supplies revision orchestration separately, and the literature module provides bounded arXiv metadata/abstract capture; their limits remain explicit.
