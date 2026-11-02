@@ -4,6 +4,8 @@
 
 The [diagnostic run 41392837686](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41392837686), at `73c0b0d998a3213168d44760f21802cf9b6bbf2c`, identifies the failure: each start returned exit code 1 because the transient-service API rejected `JobTimeoutUSec`, generated from the requested `JobTimeoutSec` setting. Native host-identity reading passed; subsequent queries found no matching unit. No lifecycle or terminal-cgroup assertion was reached. The unrelated environment-expansion hint in the error output is not evidence that argument expansion should be enabled. A transport correction still needs a successful real CI run. The ordinary offline suite skips real services. No CoworkeRL, model accounts or infrastructure provisioning is involved.
 
+[Run 41393036492](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41393036492), at `03d05517a37bb533e55d00493d005723d9f60232`, passed property submission after that setting was removed, but every service failed namespace setup with status `226/NAMESPACE` before its fixture started. A recovered unit query showed a failed process, an empty `ControlGroup` and a nonempty invocation ID. This is evidence of the startup failure, not successful fixture execution or established cleanup; no runtime-expiry or descendant-termination assertion passed.
+
 ## Execution boundary
 
 The explicit CI step runs:
@@ -14,9 +16,9 @@ HARNESS_TEST_SYSTEMD=1 node --import tsx --test test/execution/systemd-linux.tes
 
 The test fails, rather than silently skips, if the opt-in environment lacks Linux, systemd 254 or later, cgroup v2, a non-root runner identity, or noninteractive access to the system manager. It records the installed systemd version. There is no user-manager fallback, package installation or account creation. The fixed transport uses `sudo -n` for manager commands; each fixture runs as the existing runner's non-root UID/GID.
 
-The test stages only its fixed [fixture source](/Users/ronoktanvir/Documents/ChatGPT/RL-harness/test/execution/fixtures/service-child.cjs) into a separate read-only temporary source directory. This avoids relying on a checkout under `/home`, which the selected profile hides. The fixture writes one `events.jsonl` file in its private, owned temporary directory. The controller journal lives in a different directory. No credential or environment dump is collected, and the fixture contains no network operations.
+The test stages only its fixed [fixture source](../test/execution/fixtures/service-child.cjs) into a separate read-only temporary source directory. This avoids relying on a checkout under `/home`, which the selected profile hides. The fixture writes one `events.jsonl` file in its private, owned temporary directory. The controller journal lives in a different directory. No credential or environment dump is collected, and the fixture contains no network operations.
 
-Each fixture has at most six seconds of configured active runtime, two seconds of start allowance and one second of stop grace. It also schedules its own fallback exit at twelve seconds. The tests require supervisor cleanup before that fallback; seeing a fallback event fails the assertion. Each case has a fifteen-second test bound. These are practical test bounds, not a claim of hard real-time scheduling.
+Each fixture has at most six seconds of configured active runtime, a two-second activation timeout and one second of stop grace. The activation timeout does not bound time waiting in the manager's job queue; the rejected queue-time property was removed without claiming an equivalent replacement. The fixture also schedules its own fallback exit at twelve seconds. The tests require supervisor cleanup before that fallback; seeing a fallback event fails the assertion. Each case has a fifteen-second test bound. These are practical test bounds, not a claim of hard real-time scheduling or an absolute execution deadline.
 
 ## What the five cases establish if they pass
 

@@ -30,6 +30,7 @@ interface FixtureEvent {
   mode: string;
   literal?: string;
   cgroup?: string;
+  privateEndpointDenied?: boolean;
 }
 interface Fixture {
   directory: string;
@@ -109,6 +110,7 @@ async function assertEnded(fixture: Fixture, started: FixtureEvent[]): Promise<v
   assert.ok(started.length > 0, "Cleanup proof requires previously observed fixture processes");
   for (const event of started) {
     assert.equal(event.uid, process.getuid!());
+    assert.equal(event.privateEndpointDenied, true, "Fixture UID must not access the private manager endpoint");
     assert.equal(event.cgroup, `0::/system.slice/${fixture.declaration.request.identity.unitName}\n`,
       "Process must have been observed in the owned service cgroup");
   }
@@ -260,16 +262,20 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
   await t.test("a lost acceptance reply and journal reopening only query the original service", { timeout: 15_000 }, async t => {
     await withFixture(t, host, "wait", async fixture => {
       let startCalls = 0;
+      let acceptedBeforeReplyLoss = false;
       const transport: SystemdTransport = { ...fixture.transport, async start(request, signal, authorize) {
         startCalls++;
         const start = await fixture.transport.start(request, signal, authorize);
         assert.equal(start.kind, "accepted", `Start outcome before injected reply loss: ${JSON.stringify(start)}`);
+        acceptedBeforeReplyLoss = true;
         throw new Error("Injected response loss after actual manager acceptance");
       } };
       let journal = openJobJournal({ path: fixture.journalPath });
       try {
         const worker = createSupervisedWorker({ journal, transport, workerId: "linux-ci-fixture", authorize: () => true, callTimeoutMs: 4_000 });
         const result = await worker.launch(fixture.declaration, AbortSignal.timeout(7_000));
+        t.diagnostic(`Worker launch classification: ${JSON.stringify({ acceptance: result.acceptance, execution: result.execution, reason: result.reason, observation: result.observation ? observedState(result.observation) : null })}`);
+        assert.equal(acceptedBeforeReplyLoss, true, "Reply-loss fixture requires an actual accepted start before discarding its reply");
         assert.equal(result.acceptance, "accepted", "A matching real query can resolve the lost reply");
         assert.ok(journal.observations(fixture.declaration.jobId).some(value => value.observation.operation === "start"
           && value.observation.result.kind === "unknown"));

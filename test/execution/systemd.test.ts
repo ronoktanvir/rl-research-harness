@@ -56,6 +56,17 @@ test("start uses literal argv, fixed env clearing, bounded cgroup policy and no 
   assert.ok(!call.args.some(arg => /^--property=Job(?:Running)?Timeout/u.test(arg)));
 });
 
+test("control socket masks preserve systemd's required namespace setup paths", async () => {
+  const fixture = setup([ok()]);
+  await fixture.transport.start(request(), signal(), () => true);
+  const masks = fixture.calls[0]!.args.filter(arg => arg.startsWith("--property=InaccessiblePaths="));
+  assert.deepEqual(masks, ["--property=InaccessiblePaths=-/run/systemd/private -/run/dbus -/run/docker.sock -/run/containerd"]);
+  const paths = masks[0]!.split("=").at(-1)!.split(" ").map(value => value.replace(/^-/, ""));
+  for (const required of ["/run/systemd", "/run/systemd/incoming", "/run/systemd/inaccessible", "/run/systemd/journal"]) {
+    assert.ok(!paths.includes(required), required);
+  }
+});
+
 test("sudo is a fixed noninteractive prefix and never changes the trainer to root", async () => {
   const p = profile(); p.useSudo = true;
   const fixture = setup([ok(), ok(show())], { profile: p });

@@ -2,7 +2,7 @@
 
 // Deliberately small CPU-only service fixture. It has no network operations and
 // writes only the one marker in a private directory created by its test owner.
-const { appendFileSync, lstatSync, realpathSync, readFileSync } = require("node:fs");
+const { accessSync, appendFileSync, constants, lstatSync, realpathSync, readFileSync } = require("node:fs");
 const { spawn } = require("node:child_process");
 const { basename, dirname, isAbsolute, join } = require("node:path");
 const { tmpdir } = require("node:os");
@@ -34,7 +34,19 @@ setTimeout(() => { record("fallback_exit"); process.exit(99); }, 12_000);
 if (mode === "wait" || mode === "tree" || mode === "child") {
   process.on("SIGTERM", () => record("ignored_sigterm"));
 }
-record("started", { literal, cgroup: readFileSync("/proc/self/cgroup", "utf8") });
+// Metadata permission check only: never open or connect to the manager socket.
+// This establishes path inaccessibility for this UID, not its unique cause.
+for (const mode of [constants.R_OK, constants.W_OK]) {
+  let denied = false;
+  try { accessSync("/run/systemd/private", mode); }
+  catch (error) {
+    if (!["EACCES", "EPERM", "ENOENT"].includes(error.code)) throw error;
+    denied = true;
+  }
+  if (!denied) throw new Error("Fixture has read or write access to the private manager endpoint");
+}
+const privateEndpointDenied = true;
+record("started", { literal, privateEndpointDenied, cgroup: readFileSync("/proc/self/cgroup", "utf8") });
 
 if (mode === "success" || mode === "failure") {
   setTimeout(() => { const code = mode === "success" ? 0 : 23; record("exit", { code }); process.exit(code); }, 350);

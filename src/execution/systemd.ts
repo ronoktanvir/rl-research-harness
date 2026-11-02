@@ -88,7 +88,7 @@ function validateProfile(value: unknown): asserts value is SystemdProfile {
   for (const root of value.readOnlyPaths) path(root);
   path(value.writableRoot);
   for (const declared of [value.writableRoot, ...value.readOnlyPaths, ...value.executables]) {
-    if (["/home", "/root", "/run/systemd", "/run/dbus", "/run/containerd"].some(root => contains(root, declared))) invalid("declared path is hidden by the fixed service protections");
+    if (["/home", "/root", "/run/systemd", "/run/dbus", "/run/containerd"].some(root => contains(root, declared))) invalid("declared path is reserved or hidden by the fixed service protections");
   }
   for (const root of [...value.readOnlyPaths, ...value.executables]) if (contains(value.writableRoot, root) || contains(root, value.writableRoot)) invalid("writable root overlaps executable/read-only roots");
   if (!Array.isArray(value.allowedEnvironment) || value.allowedEnvironment.length > 64 || new Set(value.allowedEnvironment).size !== value.allowedEnvironment.length || value.allowedEnvironment.some(item => typeof item !== "string" || !/^[A-Z_][A-Z0-9_]*$/u.test(item))) invalid("environment allowlist");
@@ -224,7 +224,9 @@ export function createSystemdTransport(options: SystemdTransportOptions): System
         "--property=ProtectSystem=strict", "--property=ProtectHome=yes", "--property=ProtectControlGroups=yes", "--property=ProtectKernelTunables=yes", "--property=ProtectKernelModules=yes",
         "--property=RestrictSUIDSGID=yes", "--property=CapabilityBoundingSet=", "--property=SupplementaryGroups=", "--property=UMask=0077",
         `--property=ReadOnlyPaths=${profile.readOnlyPaths.join(" ")}`, `--property=ReadWritePaths=${profile.writableRoot}`,
-        "--property=InaccessiblePaths=-/run/systemd -/run/dbus -/run/docker.sock -/run/containerd",
+        // The manager requires /run/systemd/incoming while setting up this
+        // namespace. Mask its private control socket, not that parent tree.
+        "--property=InaccessiblePaths=-/run/systemd/private -/run/dbus -/run/docker.sock -/run/containerd",
         "--property=StandardInput=null", "--property=StandardOutput=journal", "--property=StandardError=journal",
         "--", ENV, "-i", "--", ...Object.keys(request.command.environment).sort().map(name => `${name}=${request.command.environment[name]}`), request.command.executable, ...request.command.args];
       // env -i drops the manager's environment too. Type=exec therefore acknowledges
