@@ -330,6 +330,20 @@ test("a rehashed edited report cannot turn numeric agreement into scientific app
   await assert.rejects(recoverObservedReplayArtifacts(directory));
 });
 
+test("a report BOM changes receipt-bound bytes and cannot disappear during offline validation", async t => {
+  const { directory } = await savedAttempt(t);
+  await recoverObservedReplayArtifacts(directory);
+  const path = join(directory, "report.md");
+  const original = await readFile(path), receipt = await readFile(join(directory, "receipt.json"));
+  const altered = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), original]);
+  await writeFile(path, altered);
+
+  await assert.rejects(loadObservedReplayArtifacts(directory), /report differs/);
+  await assert.rejects(recoverObservedReplayArtifacts(directory));
+  assert.deepEqual(await readFile(path), altered);
+  assert.deepEqual(await readFile(join(directory, "receipt.json")), receipt);
+});
+
 test("offline receipt leaves reject hard links, symlinks and duplicate JSON keys", async t => {
   for (const kind of ["hardlink", "symlink", "duplicate-key"]) {
     const { directory } = await savedAttempt(t);

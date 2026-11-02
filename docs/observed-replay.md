@@ -16,6 +16,8 @@ Execution requires a canonical absolute Python 3.11+ path on POSIX, the pinned s
 
 `observed-replay-read` validates and reopens saved evidence without reading the original project or invoking Python. `observed-replay-recover` can recreate missing report/receipt projections after a valid execution record was saved. It cannot reconstruct a missing execution, overwrite contradictory content or retry an interrupted attempt. An intentional repeat needs a separate output directory.
 
+[Replay evidence planning](replay-evidence-planning.md) imports a complete verified bundle into the ledger, binds independent annotation claims and exports a prospective review packet. Its cached reads survive removal of the copied artifact root. The integration does not enqueue native replay, call a council or authorize experiments; current-v2 evidence cannot close historical Run-1 requests.
+
 The command prints a summary of status, cleanup status, counts and evidence identities. The private `execution.json` contains the task, memo, all world fact definitions, observed messages and native observations. Treat that content as project data, not instructions. Keep these bundles outside version control.
 
 ## Explicit input identity

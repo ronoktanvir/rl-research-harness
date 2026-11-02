@@ -6,10 +6,14 @@ import { hash, keys } from "../../ledger/validation.ts";
 import { freezeSnapshot } from "../../research/evidence.ts";
 import { createObservedReplayWorker, prepareObservedReplayRequest, validateObservedReplayDescriptor, validateObservedReplayExecution } from "./observed-replay.ts";
 import type { ObservedReplayDescriptor, ObservedReplayExecution, ObservedReplayRequest } from "./observed-replay.ts";
-import { parseReplayJson, replayError } from "./replay-validation.ts";
+import { parseReplayJson, replayError, replayJson } from "./replay-validation.ts";
 
-interface ReplayIntent { schemaVersion: 1; kind: "coworker-observed-replay-intent"; createdAt: string;
+export interface ReplayIntent { schemaVersion: 1; kind: "coworker-observed-replay-intent"; createdAt: string;
   request: ObservedReplayRequest; descriptor: ObservedReplayDescriptor; replaySupported: false }
+export interface ReplayReceipt { schemaVersion: 1; kind: "coworker-observed-replay-receipt"; requestDigest: string;
+  intentDigest: string; executionDigest: string; reportSha256: string; status: "completed" | "incomplete";
+  scientificEvaluation: "unassessed"; artifacts: string[]; digest: string }
+export interface ObservedReplayBundle { intent: ReplayIntent; execution: ObservedReplayExecution; report: string; receipt: ReplayReceipt }
 const bytesHash = (value: string) => createHash("sha256").update(value).digest("hex");
 
 /** Local artifact roots are operator-trusted. Leaves must be stable, singly linked regular files. */
@@ -25,7 +29,9 @@ async function readText(path: string, max: number): Promise<string> {
     }
     const after = await file.stat();
     if (size !== before.size || size > max || before.ino !== after.ino || before.dev !== after.dev || before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || after.nlink !== 1) replayError("artifact changed during read");
-    return new TextDecoder("utf-8", { fatal: true }).decode(data.subarray(0, size));
+    // Preserve an initial BOM as content: silently dropping it would make an
+    // altered report pass its original receipt's byte-hash check.
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(data.subarray(0, size));
   } finally { await file.close(); }
 }
 export async function readObservedReplayJson(path: string, max = 65_536): Promise<unknown> {
@@ -56,21 +62,35 @@ function reportFor(execution: ObservedReplayExecution): string {
       : "No complete native replay was accepted. Failure is not a negative policy outcome.\n\n") +
     "Semantic evaluation, task success and scientific evaluation remain unassessed. Reconstructed message IDs are validated state reconstruction, not historical execution custody. Private task, memo, world and observation content is retained in execution.json.\n";
 }
-function receiptFor(intent: ReplayIntent, execution: ObservedReplayExecution, report: string) {
-  const body = { schemaVersion: 1, kind: "coworker-observed-replay-receipt", requestDigest: intent.request.requestDigest,
+function receiptFor(intent: ReplayIntent, execution: ObservedReplayExecution, report: string): ReplayReceipt {
+  const body = { schemaVersion: 1 as const, kind: "coworker-observed-replay-receipt" as const, requestDigest: intent.request.requestDigest,
     intentDigest: hash(intent), executionDigest: hash(execution), reportSha256: bytesHash(report), status: execution.status,
-    scientificEvaluation: "unassessed", artifacts: ["intent.json", "execution.json", "report.md"] };
+    scientificEvaluation: "unassessed" as const, artifacts: ["intent.json", "execution.json", "report.md"] };
   return { ...body, digest: hash(body) };
 }
-async function readAttempt(directory: string) {
-  const raw = await readObservedReplayJson(join(directory, "intent.json"), 80_000);
+function validateAttempt(raw: unknown, rawExecution: unknown) {
   keys(raw, ["schemaVersion", "kind", "createdAt", "request", "descriptor", "replaySupported"]);
   if (raw.schemaVersion !== 1 || raw.kind !== "coworker-observed-replay-intent" || raw.replaySupported !== false || typeof raw.createdAt !== "string" || !/^\d{4}-\d\d-\d\dT/.test(raw.createdAt) || !Number.isFinite(Date.parse(raw.createdAt))) replayError("invalid saved intent");
   const request = prepareObservedReplayRequest(raw.request), descriptor = validateObservedReplayDescriptor(raw.descriptor);
   if (hash(raw.request) !== hash(request)) replayError("saved request is not normalized");
   const intent = freezeSnapshot(raw) as unknown as ReplayIntent;
-  const execution = validateObservedReplayExecution(await readObservedReplayJson(join(directory, "execution.json"), 1_500_000), request, descriptor);
+  const execution = validateObservedReplayExecution(rawExecution, request, descriptor);
   return { intent, execution };
+}
+async function readAttempt(directory: string) {
+  return validateAttempt(await readObservedReplayJson(join(directory, "intent.json"), 80_000),
+    await readObservedReplayJson(join(directory, "execution.json"), 1_500_000));
+}
+
+/** Pure validation used by both local bundles and immutable ledger imports. No original-file reads. */
+export function validateObservedReplayBundle(raw: unknown): ObservedReplayBundle {
+  const v = replayJson(raw, 1_600_000); keys(v, ["intent", "execution", "report", "receipt"]);
+  const { intent, execution } = validateAttempt(v.intent, v.execution);
+  const report = reportFor(execution);
+  if (v.report !== report) replayError("saved report differs from derived observations");
+  const receipt = receiptFor(intent, execution, report);
+  if (hash(v.receipt) !== hash(receipt)) replayError("receipt mismatch");
+  return freezeSnapshot({ intent, execution, report, receipt }) as unknown as ObservedReplayBundle;
 }
 function projection(directory: string, intent: ReplayIntent, execution: ObservedReplayExecution) {
   const result = execution.output?.result;
@@ -87,10 +107,9 @@ function projection(directory: string, intent: ReplayIntent, execution: Observed
 export async function loadObservedReplayArtifacts(path: string) {
   const directory = await existingDirectory(path), { intent, execution } = await readAttempt(directory);
   const report = await readText(join(directory, "report.md"), 16_384);
-  if (report !== reportFor(execution)) replayError("saved report differs from derived observations");
   const receipt = await readObservedReplayJson(join(directory, "receipt.json"), 8192);
-  if (hash(receipt) !== hash(receiptFor(intent, execution, report))) replayError("receipt mismatch");
-  return freezeSnapshot({ intent, execution, summary: projection(directory, intent, execution) });
+  const bundle = validateObservedReplayBundle({ intent, execution, report, receipt });
+  return freezeSnapshot({ ...bundle, summary: projection(directory, intent, execution) });
 }
 
 /** Repairs only missing projections after a validated execution was saved. Never reruns native work. */

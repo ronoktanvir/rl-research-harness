@@ -17,6 +17,7 @@ import { runConventionalToArtifacts } from "./integrations/conventional/artifact
 import { PUBLISHER_USAGE, publisherCommand } from "./literature/commands.ts";
 import { runCreditCalibrationToArtifacts } from "./integrations/coworker/credit-artifacts.ts";
 import { loadObservedReplayArtifacts, readObservedReplayJson, recoverObservedReplayArtifacts, runObservedReplayToArtifacts } from "./integrations/coworker/observed-replay-artifacts.ts";
+import { REPLAY_EVIDENCE_USAGE, replayEvidenceCommand } from "./integrations/coworker/replay-commands.ts";
 
 const USAGE = `RL research harness
 
@@ -63,6 +64,8 @@ unknown. They cannot attach to a running controller or confirm remote cancellati
 ${QUEUE_USAGE}
 
 ${PUBLISHER_USAGE}
+
+${REPLAY_EVIDENCE_USAGE}
 `;
 
 function print(value: unknown): void {
@@ -86,6 +89,8 @@ export async function main(args: string[]): Promise<number> {
   if (publisher !== null) return publisher;
   const queued = await queueCommand(args);
   if (queued !== null) return queued;
+  const replayEvidence = await replayEvidenceCommand(args);
+  if (replayEvidence !== null) return replayEvidence;
   if ((command === "observed-replay-read" || command === "observed-replay-recover") && rest.length === 1) {
     const saved = await (command === "observed-replay-read" ? loadObservedReplayArtifacts : recoverObservedReplayArtifacts)(rest[0]!);
     print(saved.summary); return saved.summary.status === "completed" ? 0 : 2;
