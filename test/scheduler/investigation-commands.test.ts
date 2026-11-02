@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,8 @@ import test from "node:test";
 import { openExperimentLedger } from "../../src/ledger/index.ts";
 import { loadCoworkerInvestigation } from "../../src/integrations/coworker/investigation.ts";
 import { loadAssessmentFollowups } from "../../src/scheduler/assessment-workflow.ts";
+import { verifyEvidencePacket } from "../../src/research/evidence.ts";
+import type { CoworkerEvidenceUpdateRequest } from "../../src/scheduler/evidence-update.ts";
 import { prepareCoworkerInvestigationRequest } from "../../src/integrations/coworker/investigation-worker.ts";
 
 const execute = promisify(execFile);
@@ -70,7 +72,7 @@ test("production investigation CLI joins capture and assessment, then restarts f
   assert.deepEqual(inspected.unresolvedWorkItems, assessed.followups.workItems.map((item: { workItemId: string }) => item.workItemId));
 
   const before = openExperimentLedger({ path: ledgerPath });
-  let observationCount: number, receiptDigest: string;
+  let observationCount: number, receiptDigest: string, evidenceRequest: CoworkerEvidenceUpdateRequest;
   try {
     const receipt = loadCoworkerInvestigation(before, inspected.investigationObservationId);
     receiptDigest = receipt.digest; observationCount = before.listObservations("study").length;
@@ -78,10 +80,57 @@ test("production investigation CLI joins capture and assessment, then restarts f
     assert.ok(execution && typeof execution === "object" && !Array.isArray(execution));
     assert.equal(execution.status, "completed"); assert.equal(execution.reason, "verified_byte_correspondence_and_producer_counts");
     assert.equal(JSON.stringify(receipt).includes("SENTINEL"), false);
-    assert.deepEqual(loadAssessmentFollowups(before, assessment.workflowObservationId).workItems.map(item => item.workItemId), inspected.unresolvedWorkItems);
+    const followups = loadAssessmentFollowups(before, assessment.workflowObservationId);
+    assert.deepEqual(followups.workItems.map(item => item.workItemId), inspected.unresolvedWorkItems);
+    const workflowRecord = before.getObservation(prepared.workflowObservationId)!;
+    const followupsRecord = before.getObservation(followups.observationId)!;
+    evidenceRequest = { projectId: "study", updateId: "cli-evidence-update",
+      investigationWorkflow: { observationId: workflowRecord.eventId, observationDigest: workflowRecord.digest },
+      investigation: { observationId: receipt.eventId, observationDigest: receipt.digest },
+      followups: { observationId: followupsRecord.eventId, observationDigest: followupsRecord.digest } };
     assert.equal(before.listObservations("study").filter(item => item.source === "coworker-investigation-attempt.v1").length, 1);
     assert.equal(before.listRuns("study").length, 0); assert.equal(before.listActions("study").length, 0);
   } finally { before.close(); }
+
+  const evidenceRequestPath = join(directory, "evidence-update.json");
+  await writeFile(evidenceRequestPath, JSON.stringify(evidenceRequest));
+  const queueBeforeEvidence = await command(python, 0, "queue-status", configPath);
+  const updated = await command(python, 2, "evidence-update", configPath, evidenceRequestPath);
+  assert.equal(updated.status, "evidence_required"); assert.equal(updated.decisionScope, "prospective_research_action_planning");
+  assert.equal(updated.executionAuthorized, false); assert.equal(updated.scientificEvaluation, "unassessed");
+  assert.ok(updated.criteria.some((criterion: { status: string }) => criterion.status === "supported"));
+  assert.ok(updated.criteria.some((criterion: { status: string }) => criterion.status === "not_established"));
+  assert.ok(updated.originalRequests.every((item: { originalRequestUnresolved: boolean }) => item.originalRequestUnresolved === true));
+  assert.ok(updated.originalRequests.some((item: { disposition: string }) => item.disposition === "partially_supported"));
+  assert.deepEqual(await command(python, 2, "evidence-status", configPath, updated.updateObservationId), updated);
+
+  const packetPath = join(directory, "planning-packet.json");
+  const exported = await command(python, 0, "evidence-packet", configPath, updated.updateObservationId, packetPath);
+  assert.equal(exported.packetDigest, updated.packetDigest); assert.equal(exported.executionAuthorized, false);
+  assert.equal(exported.decisionScope, updated.decisionScope); assert.equal(exported.scientificEvaluation, "unassessed");
+  const packetBytes = await readFile(packetPath, "utf8"), packet = verifyEvidencePacket(JSON.parse(packetBytes));
+  assert.equal(packet.digest, updated.packetDigest); assert.equal(Object.hasOwn(packet, "packet"), false);
+  assert.equal(JSON.stringify(packet).includes("SENTINEL"), false);
+  const scope = JSON.parse(packet.evidence.find(item => item.id === "planning:scope")!.summary);
+  assert.equal(scope.executionAuthorized, false); assert.equal(scope.interventionAuthorized, false);
+  assert.equal(scope.scientificEvaluation, "unassessed");
+  assert.deepEqual(await command(python, 0, "evidence-packet", configPath, updated.updateObservationId, packetPath), exported);
+
+  const existingPath = join(directory, "keep-existing.json"), existingBytes = '{"sentinel":"must not be replaced"}\n';
+  await writeFile(existingPath, existingBytes);
+  await assert.rejects(execute(process.execPath, ["--import", "tsx", "src/cli.ts", "evidence-packet", configPath, updated.updateObservationId, existingPath],
+    { timeout: 30_000, maxBuffer: 1_000_000, env: { ...process.env, PATH: `${dirname(python)}:${process.env.PATH ?? "/usr/bin:/bin"}` } }),
+  error => !!error && typeof error === "object" && "code" in error && error.code === 1);
+  assert.equal(await readFile(existingPath, "utf8"), existingBytes);
+  const queueAfterEvidence = await command(python, 0, "queue-status", configPath);
+  const { globalAuthority: originalAuthority, ...originalQueueState } = queueBeforeEvidence;
+  const { globalAuthority: evidenceAuthority, ...evidenceQueueState } = queueAfterEvidence;
+  assert.deepEqual(evidenceQueueState, originalQueueState);
+  // Each exclusive-owner reopen advances the ledger fencing epoch; this does
+  // not enqueue work or change the durable stop state.
+  assert.ok(evidenceAuthority.epoch > originalAuthority.epoch);
+  assert.equal(evidenceAuthority.stopped, originalAuthority.stopped);
+  assert.equal(evidenceAuthority.reason, originalAuthority.reason);
 
   await rm(root, { recursive: true });
   // Fresh processes must recover exact evidence. A new filesystem inspection
@@ -90,12 +139,25 @@ test("production investigation CLI joins capture and assessment, then restarts f
   const advanced = await command(python, 2, "investigation-advance", configPath, prepared.workflowObservationId);
   const { stopPersisted: _, ...withoutRunnerStatus } = inspected;
   assert.deepEqual(advanced, withoutRunnerStatus);
+  assert.deepEqual(await command(python, 2, "evidence-update", configPath, evidenceRequestPath), updated);
+  assert.deepEqual(await command(python, 2, "evidence-status", configPath, updated.updateObservationId), updated);
+  assert.deepEqual(await command(python, 0, "evidence-packet", configPath, updated.updateObservationId, packetPath), exported);
+  assert.equal(await readFile(packetPath, "utf8"), packetBytes);
+  const recoveredPacketPath = join(directory, "planning-packet-after-restart.json");
+  const reexported = await command(python, 0, "evidence-packet", configPath, updated.updateObservationId, recoveredPacketPath);
+  assert.equal(reexported.packetDigest, exported.packetDigest); assert.equal(await readFile(recoveredPacketPath, "utf8"), packetBytes);
   const queue = await command(python, 0, "queue-status", configPath);
+  const { globalAuthority: restoredAuthority, ...restoredQueueState } = queue;
+  assert.deepEqual(restoredQueueState, originalQueueState);
+  assert.ok(restoredAuthority.epoch > evidenceAuthority.epoch);
+  assert.equal(restoredAuthority.stopped, originalAuthority.stopped);
   assert.equal(queue.invocationLimits[0].consumedCalls, 0);
   assert.equal(queue.recentTasks.find((task: { taskId: string }) => task.taskId === prepared.taskId).attempts, 1);
   const after = openExperimentLedger({ path: ledgerPath });
   try {
-    assert.equal(after.listObservations("study").length, observationCount);
+    assert.equal(after.listObservations("study").length, observationCount + 1);
+    assert.equal(after.getObservation(updated.updateObservationId)?.digest, updated.observationDigest);
+    assert.equal(after.listObservations("study").filter(item => item.source === "coworker-evidence-update.v1").length, 1);
     assert.equal(loadCoworkerInvestigation(after, inspected.investigationObservationId).digest, receiptDigest);
     assert.equal(after.listRuns("study").length, 0); assert.equal(after.listActions("study").length, 0);
   } finally { after.close(); }

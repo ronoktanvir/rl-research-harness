@@ -18,6 +18,8 @@ import { advanceAssessmentWorkflow, loadAssessmentWorkflow, prepareAssessmentWor
 import type { AssessmentWorkflowRequest } from "./assessment-workflow.ts";
 import { advanceInvestigationWorkflow, loadInvestigationWorkflow, prepareInvestigationWorkflow, runInvestigationWorkflow } from "./investigation-workflow.ts";
 import type { InvestigationWorkflowRequest } from "./investigation-workflow.ts";
+import { archiveCoworkerEvidenceUpdate, loadCoworkerEvidenceUpdate, normalizeCoworkerEvidenceUpdateRequest } from "./evidence-update.ts";
+import type { CoworkerEvidenceUpdate } from "./evidence-update.ts";
 
 export const QUEUE_USAGE = `Persistent research tasks (configured official-client invocation limits apply):
   npm run harness -- queue-status <config.json>
@@ -37,6 +39,9 @@ export const QUEUE_USAGE = `Persistent research tasks (configured official-clien
   npm run harness -- investigation-prepare <config.json> <request.json>
   npm run harness -- investigation-advance <config.json> <workflow-observation-id>
   npm run harness -- investigation-run <config.json> <workflow-observation-id>
+  npm run harness -- evidence-update <config.json> <request.json>
+  npm run harness -- evidence-status <config.json> <update-observation-id>
+  npm run harness -- evidence-packet <config.json> <update-observation-id> <output.json>
   npm run harness -- literature-discover <config.json> <request.json>
   npm run harness -- literature-packet <config.json> <query-observation-id> <request.json> <output.json>
   npm run harness -- literature-status <config.json>
@@ -98,6 +103,15 @@ function summary(harness: ConfiguredHarness) {
     recentTasks: tasks.slice(-30).map(({ taskId, projectId, kind, state, attempts, currentAttemptId }) => ({ taskId, projectId, kind, state, attempts, currentAttemptId })) };
 }
 
+function evidenceSummary(update: CoworkerEvidenceUpdate) {
+  return { updateObservationId: update.observationId, observationDigest: update.observationDigest, assessmentDigest: update.assessment.digest,
+    status: "evidence_required", decisionScope: update.decisionScope, executionAuthorized: update.executionAuthorized,
+    scientificEvaluation: update.scientificEvaluation, packetDigest: update.packet.digest,
+    criteria: update.assessment.criteria.map(({ id, status, claim, observation }) => ({ id, status, claim, observation })),
+    originalRequests: update.followupProgress.workItemUpdates, recommendation: update.assessment.recommendation,
+    nextActions: update.assessment.nextActions, limitations: update.assessment.limitations };
+}
+
 /** Operator entry points. Callers cannot install executable handlers through task JSON. */
 export async function queueCommand(args: string[]): Promise<number | null> {
   const [command, ...rest] = args;
@@ -107,6 +121,7 @@ export async function queueCommand(args: string[]): Promise<number | null> {
     "council-prepare": 2, "council-advance": 2, "council-run": 4,
     "assessment-prepare": 2, "assessment-advance": 2, "assessment-run": 2,
     "investigation-prepare": 2, "investigation-advance": 2, "investigation-run": 2,
+    "evidence-update": 2, "evidence-status": 2, "evidence-packet": 3,
     "literature-discover": 2, "literature-packet": 4, "literature-status": 1, "literature-release": 2 };
   if (!command || !Object.hasOwn(arity, command)) return null;
   if (rest.length !== arity[command]) throw new Error(`Invalid research queue arguments.\n${QUEUE_USAGE}`);
@@ -114,6 +129,18 @@ export async function queueCommand(args: string[]): Promise<number | null> {
   const harness = openConfiguredHarness(config);
   try {
     if (command === "queue-status") { output(summary(harness)); return 0; }
+    if (command === "evidence-update") {
+      const request = normalizeCoworkerEvidenceUpdateRequest(await readBoundedJson(rest[1]!, 16_384));
+      configuredProject(harness, request.projectId);
+      output(evidenceSummary(archiveCoworkerEvidenceUpdate(harness.ledger, harness.queue, request))); return 2;
+    }
+    if (command === "evidence-status" || command === "evidence-packet") {
+      const update = loadCoworkerEvidenceUpdate(harness.ledger, rest[1]!); configuredProject(harness, update.request.projectId);
+      if (command === "evidence-status") { output(evidenceSummary(update)); return 2; }
+      output({ path: await savePacket(rest[2]!, update.packet), packetDigest: update.packet.digest,
+        updateObservationId: update.observationId, observationDigest: update.observationDigest,
+        decisionScope: update.decisionScope, executionAuthorized: false, scientificEvaluation: "unassessed" }); return 0;
+    }
     if (command === "investigation-prepare") {
       const request = await readBoundedJson(rest[1]!, 16_384) as InvestigationWorkflowRequest;
       const assessment = loadAssessmentWorkflow(harness.ledger, request.assessmentWorkflowObservationId);
