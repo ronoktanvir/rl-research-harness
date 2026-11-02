@@ -60,7 +60,8 @@ test("actual bounded Gymnasium worker survives controller reopening under the na
     const dispatched = await dispatchNext(ledger, [backend()], { workerId: deployment.workerId,
       deadlineAt: new Date(Date.now() + 40_000).toISOString(), timeoutMs: 15_000 });
     const job = journal.readByAction(action.actionId);
-    assert.ok(job, `No supervised intent: ${JSON.stringify(dispatched)}`); unitName = job.declaration.request.identity.unitName;
+    unitName = job?.declaration.request.identity.unitName;
+    assert.ok(job, `No supervised intent: ${JSON.stringify({ state: dispatched?.state, actionId: dispatched?.actionId, jobId: dispatched?.jobId })}`);
     ledger.close(); journal.close();
     ledger = openExperimentLedger({ path: join(f.directory, "ledger.sqlite") });
     journal = openJobJournal({ path: join(f.directory, "jobs.sqlite") });
