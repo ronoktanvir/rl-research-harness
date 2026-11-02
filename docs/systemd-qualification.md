@@ -1,6 +1,6 @@
 # Bounded Linux supervisor qualification
 
-**Status: the opt-in fixture suite is implemented and type-checked; real Linux execution remains pending CI evidence.** The ordinary offline suite skips it. These tests exercise a real systemd manager with short, non-root CPU processes. They do not execute CoworkeRL, use model accounts, provision infrastructure or qualify training.
+**Status: the first real Linux qualification failed at startup; the supervisor is not yet qualified.** [CI run 41392051749](https://github.com/ronoktanvir/rl-research-harness/actions/runs/41392051749), at source `9d8f983`, reported systemd 255 (`255.4-1ubuntu8.18`); all five cases received an unknown start outcome before reaching their lifecycle assertions. The original assertions omitted the underlying manager diagnostic, so these logs do not establish the cause. Fixture-only bounded diagnostics have been added for the next run. The ordinary offline suite skips real services. No CoworkeRL, model accounts or infrastructure provisioning is involved.
 
 ## Execution boundary
 
@@ -36,8 +36,8 @@ Systemd's [`Type=exec`](https://www.freedesktop.org/software/systemd/man/latest/
 
 [`RuntimeMaxSec`](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html) limits active runtime; it is not an absolute admission-to-completion deadline. [`KillMode=control-group`](https://www.freedesktop.org/software/systemd/man/latest/systemd.kill.html), a stop timeout and final SIGKILL supply the termination mechanism tested here. Startup delay and termination grace remain separate intervals.
 
-The transport conservatively returns unknown cgroup occupancy when the cgroup file is unavailable. The fixture tests can supplement that observation using their previously recorded process identities and kernel paths; this does not silently change the production worker's state interpretation.
+The transport conservatively returns unknown cgroup occupancy when the cgroup file is unavailable. The fixture tests can supplement that observation using their previously recorded process identities and kernel paths; this does not silently change the production worker's state interpretation. Diagnostics record the actual terminal `controlGroup` and `cgroupPopulated` values and the worker's cancellation classification. A passing transport-state and independent-cleanup test does not, by itself, qualify automatic terminal classification by `SupervisedWorker` when its own evidence remains unknown.
 
 Even a passing CI run qualifies only the tested Linux image and short CPU lifecycle. It does not establish immutable artifact verification, an absolute execution-time authority check, remote fencing, hostile-code isolation, GPU/vLLM correctness, checkpoint recovery, helper/judge authentication, evaluation validity or cloud allocation release. The generic worker must remain separate from an enabled CoworkeRL backend until those contracts have their own evidence.
 
-The CI run URL and tested commit should be recorded here only after the explicit step succeeds. No actual systemd service or local privilege escalation was invoked during macOS development of these tests.
+Record a successful CI run and tested commit only after the explicit step succeeds; retain the failed qualification above. No actual systemd service or local privilege escalation was invoked during macOS development of these tests.

@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import { openJobJournal } from "../../src/execution/journal.ts";
 import { createSystemdTransport } from "../../src/execution/systemd.ts";
 import { createJobDeclaration, createSupervisedWorker } from "../../src/execution/worker.ts";
+import { runProcess } from "../../src/workers/process.ts";
 import type { HostIdentity, JobDeclaration, ServiceLimits, ServiceQueryResult, ServiceSnapshot,
   SystemdTransport } from "../../src/execution/types.ts";
 
@@ -45,6 +46,29 @@ async function ctl(args: string[]): Promise<void> {
     { timeout: 4_000, maxBuffer: 16_384, encoding: "utf8" });
 }
 function errorCode(error: unknown): unknown { return error && typeof error === "object" && "code" in error ? error.code : null; }
+function diagnosticText(value: unknown, maximum = 2_048): string {
+  return typeof value === "string" ? value.replace(/[^\x20-\x7e\n\t]/gu, "?").slice(0, maximum) : "";
+}
+function observedState(value: ServiceQueryResult): object {
+  if (value.kind !== "present") return { kind: value.kind, ...(value.kind === "unknown" ? { reason: value.reason } : {}) };
+  const s = value.snapshot;
+  return { kind: "present", activeState: s.activeState, subState: s.subState, result: s.result,
+    mainPid: s.mainPid, execMainCode: s.execMainCode, execMainStatus: s.execMainStatus,
+    controlGroup: s.controlGroup, cgroupPopulated: s.cgroupPopulated };
+}
+async function fixtureStatus(unitName: string): Promise<string> {
+  assert.match(unitName, /^rlh-[a-f0-9]{64}\.service$/u);
+  try {
+    const result = await executeFile("/usr/bin/sudo", ["-n", "--", "/usr/bin/systemctl", "--system", "--no-pager", "--no-ask-password",
+      "status", "--lines=8", "--output=cat", "--", unitName], { timeout: 2_000, maxBuffer: 8_192, encoding: "utf8" });
+    return diagnosticText(result.stdout, 4_096);
+  } catch (error) {
+    // Nonzero status is expected for failed/inactive units. This is the exact
+    // nonsecret fixture's bounded output, never a host-wide journal dump.
+    const value = error && typeof error === "object" ? error as Record<string, unknown> : {};
+    return JSON.stringify({ code: errorCode(error), stdout: diagnosticText(value.stdout, 4_096), stderr: diagnosticText(value.stderr, 1_024) });
+  }
+}
 async function until<T>(read: () => Promise<T | undefined>, message: string, milliseconds = 5_000): Promise<T> {
   const deadline = Date.now() + milliseconds;
   while (Date.now() < deadline) {
@@ -114,11 +138,21 @@ async function withFixture(t: TestContext, host: HostIdentity, mode: string,
   const controllerDirectory = await mkdtemp("/tmp/rlh-systemd-controller-");
   const marker = join(directory, "events.jsonl");
   let unitName: string | undefined;
+  const commandResults: Array<{ operation: string; exitCode: number | null; stopped: string | null; stderr: string; stdout: string }> = [];
   try {
     const source = join(sourceDirectory, "service-child.cjs");
     await copyFile(fixtureSource, source); await chmod(source, 0o644);
     const executable = await realpath(process.execPath);
-    const transport = createSystemdTransport({ profile: {
+    const transport = createSystemdTransport({ execute: async request => {
+      const result = await runProcess(request);
+      const operation = request.args.includes("/usr/bin/systemd-run") ? "start" : request.args.includes("stop") ? "stop" : "query";
+      commandResults.push({ operation, exitCode: result.exitCode, stopped: result.stopped,
+        stderr: diagnosticText(result.stderr), stdout: diagnosticText(result.stdout, 1_024) });
+      // Preserve the first start and a few recent results. This wrapper changes
+      // no request, return value, timeout or cancellation signal.
+      if (commandResults.length > 5) commandResults.splice(1, 1);
+      return result;
+    }, profile: {
       userId: process.getuid!(), groupId: process.getgid!(), executables: [executable],
       readOnlyPaths: [sourceDirectory], writableRoot: directory, allowedEnvironment: [], maxima: limits, useSudo: true,
     } });
@@ -128,9 +162,14 @@ async function withFixture(t: TestContext, host: HostIdentity, mode: string,
       command: { executable, args: [source, mode, marker, literalArgument], cwd: sourceDirectory, environment: {} },
       limits: { ...limits, ...overrides }, deadlineAt: new Date(Date.now() + 30_000).toISOString(), host });
     unitName = declaration.request.identity.unitName;
+    assert.deepEqual(await transport.hostIdentity(), host, "Native bounded host-identity reading must match the CI host");
     await body({ directory, marker, journalPath: join(controllerDirectory, "jobs.sqlite"), transport, declaration,
       query: () => transport.query({ identity: declaration.request.identity, expectedHost: host }, AbortSignal.timeout(2_000)),
       events: () => events(marker) });
+  } catch (error) {
+    t.diagnostic(`Fixture-only manager results: ${JSON.stringify(commandResults)}`);
+    if (unitName) t.diagnostic(`Owned fixture status: ${await fixtureStatus(unitName)}`);
+    throw error;
   } finally {
     if (unitName) {
       assert.match(unitName, /^rlh-[a-f0-9]{64}\.service$/u);
@@ -163,8 +202,10 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
 
   await t.test("successful exit retains identity, literal argv and the real exit status", { timeout: 15_000 }, async t => {
     await withFixture(t, host, "success", async fixture => {
-      assert.equal((await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true)).kind, "accepted");
+      const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true);
+      assert.equal(start.kind, "accepted", `Start outcome: ${JSON.stringify(start)}`);
       const ended = await snapshot(fixture, value => value.subState === "exited" && value.execMainCode === 1);
+      t.diagnostic(`Successful terminal transport state: ${JSON.stringify(observedState({ kind: "present", snapshot: ended }))}`);
       assert.equal(ended.activeState, "active"); assert.equal(ended.result, "success"); assert.equal(ended.execMainStatus, 0);
       const starts = (await fixture.events()).filter(event => event.event === "started");
       assert.equal(starts.length, 1); assert.equal(starts[0]!.literal, literalArgument);
@@ -174,8 +215,10 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
 
   await t.test("nonzero exit remains a failed process observation after acceptance", { timeout: 15_000 }, async t => {
     await withFixture(t, host, "failure", async fixture => {
-      assert.equal((await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true)).kind, "accepted");
+      const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true);
+      assert.equal(start.kind, "accepted", `Start outcome: ${JSON.stringify(start)}`);
       const ended = await snapshot(fixture, value => value.activeState === "failed");
+      t.diagnostic(`Nonzero terminal transport state: ${JSON.stringify(observedState({ kind: "present", snapshot: ended }))}`);
       assert.equal(ended.result, "exit-code"); assert.equal(ended.execMainCode, 1); assert.equal(ended.execMainStatus, 23);
       await assertEnded(fixture, (await fixture.events()).filter(event => event.event === "started"));
     });
@@ -183,10 +226,12 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
 
   await t.test("relative runtime expiry kills a SIGTERM-ignoring fixture before its fallback", { timeout: 15_000 }, async t => {
     await withFixture(t, host, "wait", async fixture => {
-      assert.equal((await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true)).kind, "accepted");
+      const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true);
+      assert.equal(start.kind, "accepted", `Start outcome: ${JSON.stringify(start)}`);
       const running = await snapshot(fixture, value => value.activeState === "active" && value.cgroupPopulated === true);
       assert.ok(running.mainPid > 0);
       const ended = await snapshot(fixture, value => value.activeState === "failed");
+      t.diagnostic(`Runtime terminal transport state: ${JSON.stringify(observedState({ kind: "present", snapshot: ended }))}`);
       assert.equal(ended.invocationId, running.invocationId); assert.equal(ended.result, "timeout");
       const rows = await fixture.events();
       assert.ok(rows.some(event => event.event === "ignored_sigterm"));
@@ -196,13 +241,15 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
 
   await t.test("explicit stop kills both the ignoring parent and its detached child", { timeout: 15_000 }, async t => {
     await withFixture(t, host, "tree", async fixture => {
-      assert.equal((await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true)).kind, "accepted");
+      const start = await fixture.transport.start(fixture.declaration.request, AbortSignal.timeout(4_000), () => true);
+      assert.equal(start.kind, "accepted", `Start outcome: ${JSON.stringify(start)}`);
       const starts = await until(async () => { const rows = (await fixture.events()).filter(event => event.event === "started");
         return rows.length === 2 ? rows : undefined; }, "Both fixture processes must start before cancellation");
       assert.deepEqual(starts.map(event => event.mode).sort(), ["child", "tree"]);
       const running = await snapshot(fixture, value => value.activeState === "active" && value.cgroupPopulated === true);
       const stopped = await fixture.transport.stop({ identity: fixture.declaration.request.identity, expectedHost: host,
         expectedInvocationId: running.invocationId }, AbortSignal.timeout(4_000));
+      t.diagnostic(`Stop transport state: ${JSON.stringify({ command: stopped.command, observation: observedState(stopped.observation) })}`);
       assert.equal(stopped.command, "sent");
       await assertEnded(fixture, starts);
       const ignored = new Set((await fixture.events()).filter(event => event.event === "ignored_sigterm").map(event => event.pid));
@@ -215,7 +262,8 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
       let startCalls = 0;
       const transport: SystemdTransport = { ...fixture.transport, async start(request, signal, authorize) {
         startCalls++;
-        assert.equal((await fixture.transport.start(request, signal, authorize)).kind, "accepted");
+        const start = await fixture.transport.start(request, signal, authorize);
+        assert.equal(start.kind, "accepted", `Start outcome before injected reply loss: ${JSON.stringify(start)}`);
         throw new Error("Injected response loss after actual manager acceptance");
       } };
       let journal = openJobJournal({ path: fixture.journalPath });
@@ -237,7 +285,8 @@ test("real Linux systemd qualification (explicit CPU-only opt-in)", { skip: !ena
         const starts = await until(async () => { const rows = (await fixture.events()).filter(event => event.event === "started");
           return rows.length ? rows : undefined; }, "Original service marker missing");
         assert.equal(starts.length, 1);
-        await reopened.cancel(fixture.declaration.jobId, AbortSignal.timeout(4_000));
+        const cancelled = await reopened.cancel(fixture.declaration.jobId, AbortSignal.timeout(4_000));
+        t.diagnostic(`Worker cancel classification: ${JSON.stringify({ acceptance: cancelled.acceptance, execution: cancelled.execution, reason: cancelled.reason, observation: cancelled.observation ? observedState(cancelled.observation) : null })}`);
         await assertEnded(fixture, starts);
         assert.equal((await fixture.events()).filter(event => event.event === "started").length, 1);
       } finally { journal.close(); }
