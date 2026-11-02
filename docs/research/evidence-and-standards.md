@@ -10,6 +10,8 @@ The search covered RL empirical methodology, automated reward/environment design
 
 Conference papers, preprints, and conference policy have different evidential roles. Accepted papers support particular methods and findings under their experimental conditions. Preprints identify promising mechanisms to test. The conference handbook describes submission expectations; it does not certify research quality. No source here establishes that combining these mechanisms yields reliable, general, unattended scientific discovery.
 
+The later [full-paper qualification](paper-qualification-2026-11-02.md) records the publisher artifacts, inspected sections and limitations of Agarwal et al., then maps their evaluation questions to proposed checks for historical CoworkeRL evidence. This is a manual source review; runtime publisher ingestion and automatic research updates remain unfinished.
+
 ## What to borrow from the research
 
 | Source and verified status | Observation and useful mechanism | Boundary on the conclusion |

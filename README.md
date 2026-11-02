@@ -2,7 +2,7 @@
 
 A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
-The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger with dispatch records, read-only CoworkerRL capture, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training backends, full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
+The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger with dispatch records, read-only CoworkerRL capture and attempt previews, a persistent local task queue, and bounded arXiv metadata/abstract ingestion. Real training backends, automated full-paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
 
 ## Run locally
 
@@ -18,6 +18,8 @@ npm run harness -- observe /path/to/CoworkeRL path/within/project/report.json
 ```
 
 Inspection reads selected references or an explicit report. It does not execute CoworkerRL code, modify the project or start training. An old report does not establish that a job has stalled.
+
+`npm run harness -- coworker-plan attempt-request.json` prints an immutable [attempt preview](docs/integrations/coworker-attempt-plan.md) with manifest-bound settings and command arguments. It validates declarations only; it does not inspect source/checkpoint bytes, run native preflight, admit a job or start training.
 
 To preserve an observation and export operational context:
 
@@ -57,7 +59,7 @@ A council's approval means its review protocol completed; it does not certify sc
 | `src/controller/` | Single-submission/reconciliation coordinator and ledger-derived project summaries |
 | `src/scheduler/` | Persistent tasks, invocation admission, account holds, bounded local runner and archived-report review plans |
 | `src/literature/` | Bounded arXiv queries, strict Atom parsing, captured response provenance and abstract-scoped evidence packets |
-| `src/integrations/coworker/` | CoworkerRL references/metrics and descriptor-relative confined file reader |
+| `src/integrations/coworker/` | CoworkerRL references/metrics, confined file reader and immutable attempt previews |
 | `test/` | Offline tests, real process-interruption tests and adversarial input cases |
 
 A resumed conversation is not proof that remote training resumed. Pi state and Markdown remain separate from the authoritative experiment ledger. [Ledger qualification](docs/ledger-implementation.md) and [dispatch qualification](docs/controller-dispatch.md) describe tested local guarantees and the remaining remote-worker requirements.
@@ -67,6 +69,7 @@ A resumed conversation is not proof that remote training resumed. Pi state and M
 - [Reuse plan](docs/reuse-plan.md), [Pi audit](docs/repo-audits/pi.md), [Ouroboros audit](docs/repo-audits/ouroboros.md): pinned source evidence and reuse decisions.
 - [Architecture](docs/architecture.md), [research protocol](docs/research-protocol.md), [roadmap](docs/roadmap.md): the complete target and acceptance gates.
 - [Research evidence](docs/research/evidence-and-standards.md): selected primary literature, publication status and limitations; recent selected work reaches October 14, 2026, without claiming an exhaustive search.
+- [Full-paper application](docs/research/paper-qualification-2026-11-02.md): manually inspected NeurIPS evaluation methodology mapped to proposed CoworkeRL checks; no new experimental result or automated literature service.
 - [Pi qualification](docs/runtime-qualification.md), [CoworkerRL integration](docs/integrations/coworker.md): tested boundaries and unknowns.
 - [Runtime decision](docs/decisions/0001-runtime.md), [subscription decision](docs/decisions/0002-subscription-workers.md): tradeoffs and reversal conditions.
 - [Project context](context/PROJECT.md), [agent instructions](AGENTS.md), [templates](docs/templates/research-records.md): continuity without treating proposals as completed capabilities.
