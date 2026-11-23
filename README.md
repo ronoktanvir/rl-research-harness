@@ -1,6 +1,6 @@
 # RL research harness
 
-A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. **CoworkerRL is the first integration target.** The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
+A research controller for designing RL experiments, challenging proposals against evidence, and monitoring training. The intended system supports conventional RL and LLM post-training through separate adapters, with an always-on Droplet controller.
 
 The current code provides subscription-backed reviewers, durable review/revision councils, a qualified Pi runtime adapter, an experiment ledger connected to a local Linux supervisor, CoworkerRL capture/assessment and persistent diagnostic workflows, a bounded conventional RL adapter, attempt/byte/native-output checks, a persistent task queue, arXiv metadata ingestion, and primary-publisher PDF retrieval with bounded page extraction. CoworkerRL execution, general training adapters, automated scientific paper assessment, autonomous experiment selection and Droplet deployment remain unfinished. See [implementation status](docs/implementation-status.md) for exact qualification and live failures.
 
